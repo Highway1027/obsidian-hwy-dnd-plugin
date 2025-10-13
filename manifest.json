@@ -1,11 +1,11 @@
+
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
+	"id": "highway-dnd-tools",
+	"name": "Highway DnD Tools",
+	"version": "0.1.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Integrates your Highway DnD Tools caravan directly into Obsidian for seamless session prep and management.",
+	"author": "Highway1027",
+	"authorUrl": "",
 	"isDesktopOnly": false
 }
