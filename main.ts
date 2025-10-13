@@ -1,15 +1,17 @@
 // main.ts
-// v2 - Cleaned template and added settings tab and initial command.
-import { App, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+// v6 - Corrected full version, no abbreviations.
+import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 
 // Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
 	apiToken: string;
+    defaultCaravanId: string;
 }
 
 // Set the default values for the settings.
 const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
-	apiToken: ''
+	apiToken: '',
+    defaultCaravanId: ''
 }
 
 // This is the main class for our plugin.
@@ -18,43 +20,103 @@ export default class HwysDnDToolsPlugin extends Plugin {
 
 	// This function runs when the plugin is first loaded.
 	async onload() {
-		// Load any saved settings from memory.
 		await this.loadSettings();
 
-		// This adds a command to the command palette.
 		this.addCommand({
 			id: 'insert-caravan-status',
 			name: 'Insert Caravan Status',
-			callback: () => {
-				// This is what will run when the user triggers the command.
-				// For now, it just creates a simple notice.
-				// Later, this will call our Firebase API.
-				new Notice('Fetching Caravan Status...');
+			callback: async () => {
+				if (!this.settings.apiToken) {
+					new Notice('Error: API Token not set. Please add it in the plugin settings.');
+					return;
+				}
+
+                let caravanId: string | null = this.settings.defaultCaravanId;
+
+                if (!caravanId) {
+                    caravanId = await this.promptForCaravanId();
+                    if (!caravanId) {
+                        return;
+                    }
+                }
+                
+                try {
+                    new Notice('Fetching Caravan Status...');
+                    
+                    const projectId = 'wildshape-tracker';
+                    const region = 'europe-west1';
+                    const functionName = 'obsidianGetCaravanStatus';
+                    const apiUrl = `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
+
+                    const response = await requestUrl({
+                        url: apiUrl,
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            apiToken: this.settings.apiToken,
+                            caravanId: caravanId
+                        })
+                    });
+                    
+                    const result = response.json;
+
+                    const markdownString = this.formatDataToMarkdown(result);
+
+                    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                    if (activeView) {
+                        const editor = activeView.editor;
+                        editor.replaceSelection(markdownString);
+                        new Notice('Caravan Status inserted!');
+                    } else {
+                        new Notice('Error: No active editor found. Please open a note first.');
+                    }
+
+                } catch (error) {
+                    console.error('Highway DnD Tools - Error fetching data:', error);
+                    const errorMessage = error.json?.error?.message || 'An unknown error occurred.';
+                    new Notice(`Error: ${errorMessage}`, 10000);
+                }
 			}
 		});
 
-		// This adds a settings tab so the user can configure the plugin.
 		this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
 	}
+    
+    promptForCaravanId(): Promise<string | null> {
+        return new Promise((resolve) => {
+            new CaravanIdModal(this.app, (result) => {
+                resolve(result);
+            }).open();
+        });
+    }
 
-	// This function runs when the plugin is disabled.
-	onunload() {
+    formatDataToMarkdown(data: any): string {
+        let md = `---\n`;
+        md += `### **${data.caravanName} - Day ${data.currentDay}**\n`;
+        
+        for (const stat of data.stats) {
+            md += `- **${stat.label}:** ${stat.value}`;
+            if (stat.max !== undefined) {
+                md += `/${stat.max}`;
+            }
+            md += `\n`;
+        }
+        
+        md += `---\n`;
+        return md;
+    }
 
-	}
+	onunload() {}
 
-	// This function loads the plugin's settings.
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 	}
 
-	// This function saves the plugin's settings.
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
 }
 
-
-// This class defines the UI for our settings tab.
 class HwysDnDToolsSettingTab extends PluginSettingTab {
 	plugin: HwysDnDToolsPlugin;
 
@@ -63,27 +125,77 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	// This function creates the HTML elements for the settings tab.
 	display(): void {
 		const {containerEl} = this;
-
-		// Clear any old settings from the screen.
 		containerEl.empty();
-
-		// Add a heading for our settings section.
 		containerEl.createEl('h2', {text: 'Highway DnD Tools Settings'});
 
-		// Add the setting for the API Token.
 		new Setting(containerEl)
 			.setName('API Token')
 			.setDesc('Paste your personal API token generated from the Highway DnD Tools website.')
 			.addText(text => text
 				.setPlaceholder('Enter your API token')
-				.setValue(this.plugin.settings.apiToken)
+                .setValue(this.plugin.settings.apiToken)
+                .onChange(async (value) => {
+					this.plugin.settings.apiToken = value.trim();
+					await this.plugin.saveSettings();
+				}));
+
+        new Setting(containerEl)
+			.setName('Default Caravan ID')
+			.setDesc(' (Optional) Paste the ID of your main caravan to skip being prompted each time.')
+			.addText(text => text
+				.setPlaceholder('Enter your default Caravan ID')
+				.setValue(this.plugin.settings.defaultCaravanId)
 				.onChange(async (value) => {
-					// When the user types in the box, update the setting and save it.
-					this.plugin.settings.apiToken = value;
+					this.plugin.settings.defaultCaravanId = value.trim();
 					await this.plugin.saveSettings();
 				}));
 	}
+}
+
+class CaravanIdModal extends Modal {
+    result: string;
+    onSubmit: (result: string | null) => void;
+
+    constructor(app: App, onSubmit: (result: string | null) => void) {
+        super(app);
+        this.onSubmit = onSubmit;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h2", { text: "Enter Caravan ID" });
+
+        const input = contentEl.createEl("input", { type: "text" });
+        input.style.width = "100%";
+        input.placeholder = "Paste your Caravan ID here...";
+
+        const submitButton = contentEl.createEl("button", { text: "Submit" });
+        submitButton.style.marginTop = "1rem";
+        
+        submitButton.addEventListener("click", () => {
+            if (input.value) {
+                this.onSubmit(input.value.trim());
+                this.close();
+            }
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && input.value) {
+                this.onSubmit(input.value.trim());
+                this.close();
+            }
+        });
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+        // Resolve with null if the modal is closed without submitting
+        // This was a subtle bug waiting to happen, better to check if onSubmit exists
+        if (this.onSubmit) {
+            this.onSubmit(null);
+        }
+    }
 }
