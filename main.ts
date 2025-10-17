@@ -1,35 +1,35 @@
 // main.ts
-// v6 - Corrected full version, no abbreviations.
+// v8 - Fixed TypeScript error for 'unknown' value type in materials loop
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 
 // Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
-	apiToken: string;
+    apiToken: string;
     defaultCaravanId: string;
 }
 
 // Set the default values for the settings.
 const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
-	apiToken: '',
+    apiToken: '',
     defaultCaravanId: ''
 }
 
 // This is the main class for our plugin.
 export default class HwysDnDToolsPlugin extends Plugin {
-	settings: HwysDnDToolsSettings;
+    settings: HwysDnDToolsSettings;
 
-	// This function runs when the plugin is first loaded.
-	async onload() {
-		await this.loadSettings();
+    // This function runs when the plugin is first loaded.
+    async onload() {
+        await this.loadSettings();
 
-		this.addCommand({
-			id: 'insert-caravan-status',
-			name: 'Insert Caravan Status',
-			callback: async () => {
-				if (!this.settings.apiToken) {
-					new Notice('Error: API Token not set. Please add it in the plugin settings.');
-					return;
-				}
+        this.addCommand({
+            id: 'insert-caravan-status',
+            name: 'Insert Caravan Status',
+            callback: async () => {
+                if (!this.settings.apiToken) {
+                    new Notice('Error: API Token not set. Please add it in the plugin settings.');
+                    return;
+                }
 
                 let caravanId: string | null = this.settings.defaultCaravanId;
 
@@ -76,11 +76,11 @@ export default class HwysDnDToolsPlugin extends Plugin {
                     const errorMessage = error.json?.error?.message || 'An unknown error occurred.';
                     new Notice(`Error: ${errorMessage}`, 10000);
                 }
-			}
-		});
+            }
+        });
 
-		this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
-	}
+        this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
+    }
     
     promptForCaravanId(): Promise<string | null> {
         return new Promise((resolve) => {
@@ -93,65 +93,87 @@ export default class HwysDnDToolsPlugin extends Plugin {
     formatDataToMarkdown(data: any): string {
         let md = `---\n`;
         md += `### **${data.caravanName} - Day ${data.currentDay}**\n`;
-        
-        for (const stat of data.stats) {
+        md += `| PCs | NPCs | Defense |\n`;
+        md += `|:---:|:----:|:-------:|\n`;
+        md += `| ${data.pcCount} | ${data.npcCount} | ${data.defense} |\n`;
+
+        md += `\n#### Resources\n`;
+        for (const stat of data.mainResources) {
             md += `- **${stat.label}:** ${stat.value}`;
-            if (stat.max !== undefined) {
+            if (stat.max != null) { // Use != null to check for both null and undefined
                 md += `/${stat.max}`;
             }
             md += `\n`;
+        }
+
+        md += `\n#### Materials\n`;
+        if (data.materials && Object.keys(data.materials).length > 0) {
+            let hasMaterials = false;
+            for (const [key, value] of Object.entries(data.materials)) {
+                // Cast value to number to satisfy TypeScript's type safety
+                if (Number(value) > 0) {
+                    hasMaterials = true;
+                    const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
+                    md += `- **${capitalizedKey}:** ${value}\n`;
+                }
+            }
+            if (!hasMaterials) {
+                md += `_No materials._\n`;
+            }
+        } else {
+            md += `_No materials._\n`;
         }
         
         md += `---\n`;
         return md;
     }
 
-	onunload() {}
+    onunload() {}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
 }
 
 class HwysDnDToolsSettingTab extends PluginSettingTab {
-	plugin: HwysDnDToolsPlugin;
+    plugin: HwysDnDToolsPlugin;
 
-	constructor(app: App, plugin: HwysDnDToolsPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
+    constructor(app: App, plugin: HwysDnDToolsPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
 
-	display(): void {
-		const {containerEl} = this;
-		containerEl.empty();
-		containerEl.createEl('h2', {text: 'Highway DnD Tools Settings'});
-
-		new Setting(containerEl)
-			.setName('API Token')
-			.setDesc('Paste your personal API token generated from the Highway DnD Tools website.')
-			.addText(text => text
-				.setPlaceholder('Enter your API token')
-                .setValue(this.plugin.settings.apiToken)
-                .onChange(async (value) => {
-					this.plugin.settings.apiToken = value.trim();
-					await this.plugin.saveSettings();
-				}));
+    display(): void {
+        const {containerEl} = this;
+        containerEl.empty();
+        containerEl.createEl('h2', {text: 'Highway DnD Tools Settings'});
 
         new Setting(containerEl)
-			.setName('Default Caravan ID')
-			.setDesc(' (Optional) Paste the ID of your main caravan to skip being prompted each time.')
-			.addText(text => text
-				.setPlaceholder('Enter your default Caravan ID')
-				.setValue(this.plugin.settings.defaultCaravanId)
-				.onChange(async (value) => {
-					this.plugin.settings.defaultCaravanId = value.trim();
-					await this.plugin.saveSettings();
-				}));
-	}
+            .setName('API Token')
+            .setDesc('Paste your personal API token generated from the Highway DnD Tools website.')
+            .addText(text => text
+                .setPlaceholder('Enter your API token')
+                .setValue(this.plugin.settings.apiToken)
+                .onChange(async (value) => {
+                    this.plugin.settings.apiToken = value.trim();
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Default Caravan ID')
+            .setDesc(' (Optional) Paste the ID of your main caravan to skip being prompted each time.')
+            .addText(text => text
+                .setPlaceholder('Enter your default Caravan ID')
+                .setValue(this.plugin.settings.defaultCaravanId)
+                .onChange(async (value) => {
+                    this.plugin.settings.defaultCaravanId = value.trim();
+                    await this.plugin.saveSettings();
+                }));
+    }
 }
 
 class CaravanIdModal extends Modal {
@@ -199,3 +221,4 @@ class CaravanIdModal extends Modal {
         }
     }
 }
+
