@@ -1,0 +1,36 @@
+name: Release Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'manifest.json' # This is the trigger!
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # This gives the bot permission to create the release
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Read Version
+        id: version
+        run: |
+          # This reads the version number from your manifest.json
+          VERSION=$(jq -r .version manifest.json)
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: v${{ steps.version.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: |
+            main.js
+            manifest.json
+            styles.css
+            # Add any other files you need here (e.g., README.md)
