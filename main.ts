@@ -1,5 +1,5 @@
 // main.ts
-// v8 - Fixed TypeScript error for 'unknown' value type in materials loop
+// v8 - Fixed TypeScript error for 'unknown' value type in materials loop.
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 
 // Define the settings that our plugin will store.
@@ -39,10 +39,10 @@ export default class HwysDnDToolsPlugin extends Plugin {
                         return;
                     }
                 }
-                
+
                 try {
                     new Notice('Fetching Caravan Status...');
-                    
+
                     const projectId = 'wildshape-tracker';
                     const region = 'europe-west1';
                     const functionName = 'obsidianGetCaravanStatus';
@@ -57,7 +57,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
                             caravanId: caravanId
                         })
                     });
-                    
+
                     const result = response.json;
 
                     const markdownString = this.formatDataToMarkdown(result);
@@ -81,7 +81,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
 
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
     }
-    
+
     promptForCaravanId(): Promise<string | null> {
         return new Promise((resolve) => {
             new CaravanIdModal(this.app, (result) => {
@@ -123,12 +123,12 @@ export default class HwysDnDToolsPlugin extends Plugin {
         } else {
             md += `_No materials._\n`;
         }
-        
+
         md += `---\n`;
         return md;
     }
 
-    onunload() {}
+    onunload() { }
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -148,9 +148,9 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
     }
 
     display(): void {
-        const {containerEl} = this;
+        const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', {text: 'Highway DnD Tools Settings'});
+        containerEl.createEl('h2', { text: 'Highway DnD Tools Settings' });
 
         new Setting(containerEl)
             .setName('API Token')
@@ -195,7 +195,7 @@ class CaravanIdModal extends Modal {
 
         const submitButton = contentEl.createEl("button", { text: "Submit" });
         submitButton.style.marginTop = "1rem";
-        
+
         submitButton.addEventListener("click", () => {
             if (input.value) {
                 this.onSubmit(input.value.trim());
