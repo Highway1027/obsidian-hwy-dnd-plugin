@@ -58,18 +58,8 @@ export default class HwysDnDToolsPlugin extends Plugin {
                         })
                     });
 
-                    console.log("Highway DnD Tools: Raw API Response Status:", response.status);
                     const result = response.json;
-                    console.log("Highway DnD Tools: API Data:", result);
-
                     const markdownString = this.formatDataToMarkdown(result);
-                    console.log("Highway DnD Tools: Generated Markdown length:", markdownString.length);
-
-                    if (!markdownString || markdownString.trim().length === 0) {
-                        console.error("Highway DnD Tools: Generated markdown is empty.");
-                        new Notice("Error: Received empty data from API.");
-                        return;
-                    }
 
                     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
                     if (activeView) {
@@ -135,11 +125,12 @@ export default class HwysDnDToolsPlugin extends Plugin {
             md += `\n#### Recent Activity\n`;
 
             if (data.logSummary) {
-                md += `> [!SUMMARY] Weekly Summary\n> ${data.logSummary}\n\n`;
+                md += `> [!abstract] Weekly Summary\n> ${data.logSummary}\n\n`;
             }
 
             for (const log of data.recentLogs) {
-                md += `- **Day ${log.day}:** ${log.text}\n`;
+                // Use > [!example] for a "note" style card look, or > [!quote]
+                md += `> [!example] Day ${log.day}\n> ${log.text}\n\n`;
             }
         }
 
