@@ -91,7 +91,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
     }
 
     formatDataToMarkdown(data: any): string {
-        let md = `---\n`;
+        let md = ``;
         md += `### **${data.caravanName} - Day ${data.currentDay}**\n`;
         md += `| PCs | NPCs | Defense |\n`;
         md += `|:---:|:----:|:-------:|\n`;
@@ -114,7 +114,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
                 if (Number(value) > 0) {
                     hasMaterials = true;
                     const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
-                    md += `- **${capitalizedKey}:** ${value}\n`;
+                    md += `- **${capitalizedKey}:** ${value}/100\n`;
                 }
             }
             if (!hasMaterials) {
@@ -124,7 +124,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
             md += `_No materials._\n`;
         }
 
-        md += `---\n`;
+        md += `\n`;
         return md;
     }
 
