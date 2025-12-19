@@ -3,7 +3,6 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 
 // Define the settings that our plugin will store.
-// Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
     apiToken: string;
     defaultCaravanId: string;
@@ -331,6 +330,45 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        containerEl.createEl('h3', { text: 'Theme Settings' });
+
+        new Setting(containerEl)
+            .setName('Visual Theme')
+            .setDesc('Select the style for recent logs and summaries.')
+            .addDropdown(dropdown => dropdown
+                .addOption('default', 'Wildshape Dark (Webapp Match)')
+                .addOption('parchment', 'D&D Parchment')
+                .addOption('ffix', 'Final Fantasy IX')
+                .addOption('cyberpunk', 'Cyberpunk 2077')
+                .addOption('custom', 'Custom Colors')
+                .setValue(this.plugin.settings.theme)
+                .onChange(async (value: any) => {
+                    this.plugin.settings.theme = value;
+                    await this.plugin.saveSettings();
+                    this.display(); // Refresh to show/hide custom colors
+                }));
+
+        if (this.plugin.settings.theme === 'custom') {
+            const addColorSetting = (name: string, desc: string, key: keyof HwysDnDToolsSettings['customColors']) => {
+                new Setting(containerEl)
+                    .setName(name)
+                    .setDesc(desc + ' (Format: H, S%, L% e.g., "221, 39%, 11%")')
+                    .addText(text => text
+                        .setValue(this.plugin.settings.customColors[key])
+                        .onChange(async (value) => {
+                            this.plugin.settings.customColors[key] = value.trim();
+                            await this.plugin.saveSettings();
+                        }));
+            };
+
+            addColorSetting('Background Primary', 'Main background color', 'bgPrimary');
+            addColorSetting('Background Secondary', 'Card background color', 'bgSecondary');
+            addColorSetting('Accent Color', 'Highlight color', 'accent');
+            addColorSetting('Text Primary', 'Main text color', 'textPrimary');
+            addColorSetting('Text Secondary', 'Subtext color', 'textSecondary');
+            addColorSetting('Border Color', 'Border color', 'border');
+        }
+
         // Command Reference
         containerEl.createEl('h3', { text: 'Available Commands', attr: { style: 'margin-top: 30px;' } });
 
@@ -447,4 +485,3 @@ class CaravanLogRangeModal extends Modal {
         this.contentEl.empty();
     }
 }
-
