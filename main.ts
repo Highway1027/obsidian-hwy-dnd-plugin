@@ -58,9 +58,18 @@ export default class HwysDnDToolsPlugin extends Plugin {
                         })
                     });
 
+                    console.log("Highway DnD Tools: Raw API Response Status:", response.status);
                     const result = response.json;
+                    console.log("Highway DnD Tools: API Data:", result);
 
                     const markdownString = this.formatDataToMarkdown(result);
+                    console.log("Highway DnD Tools: Generated Markdown length:", markdownString.length);
+
+                    if (!markdownString || markdownString.trim().length === 0) {
+                        console.error("Highway DnD Tools: Generated markdown is empty.");
+                        new Notice("Error: Received empty data from API.");
+                        return;
+                    }
 
                     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
                     if (activeView) {
@@ -161,6 +170,14 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
         containerEl.createEl('h2', { text: 'Highway DnD Tools Settings' });
+
+        // Version Display
+        const manifest = this.plugin.manifest;
+        containerEl.createEl('div', {
+            text: `Version ${manifest.version}`,
+            cls: 'setting-item-description',
+            attr: { style: 'margin-bottom: 20px; font-style: italic; color: var(--text-muted);' }
+        });
 
         new Setting(containerEl)
             .setName('API Token')
