@@ -78,6 +78,86 @@ export default class HwysDnDToolsPlugin extends Plugin {
             }
         });
 
+        // Command: Insert Caravan Logs Range
+        this.addCommand({
+            id: 'insert-caravan-logs-range',
+            name: 'Insert Caravan Logs Range',
+            callback: async () => {
+                if (!this.settings.apiToken) {
+                    new Notice('Error: API Token not set.');
+                    return;
+                }
+
+                let caravanId: string | null = this.settings.defaultCaravanId;
+                if (!caravanId) {
+                    caravanId = await this.promptForCaravanId();
+                    if (!caravanId) return;
+                }
+
+                try {
+                    // 1. Fetch current status minimally to get the "Max Day"
+                    // (We could persist this, but fetching ensures freshness)
+                    new Notice('Fetching current day...');
+                    const projectId = 'wildshape-tracker';
+                    const region = 'europe-west1';
+                    const fetchUrl = `https://${region}-${projectId}.cloudfunctions.net/obsidianGetCaravanStatus`;
+
+                    const statusRes = await requestUrl({
+                        url: fetchUrl,
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiToken: this.settings.apiToken, caravanId })
+                    });
+                    const currentDay = statusRes.json.currentDay || 0;
+
+                    // 2. Open Modal to pick range
+                    new CaravanLogRangeModal(this.app, currentDay, async (min, max) => {
+                        new Notice(`Fetching logs from Day ${min} to ${max}...`);
+
+                        const logsUrl = `https://${region}-${projectId}.cloudfunctions.net/obsidianGetCaravanLogs`;
+                        const logsRes = await requestUrl({
+                            url: logsUrl,
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                apiToken: this.settings.apiToken,
+                                caravanId,
+                                minDay: min,
+                                maxDay: max
+                            })
+                        });
+
+                        const logs = logsRes.json.logs || [];
+                        if (logs.length === 0) {
+                            new Notice("No logs found in that range.");
+                            return;
+                        }
+
+                        // 3. Format Validation
+                        let md = `### Caravan Logs (Day ${min} - ${max})\n\n`;
+                        for (const log of logs) {
+                            // Strip "Day X" / "Dag X" prefix if it exists in the body
+                            // Regex looks for "Day 123" or "Dag 123" followed by punctuation or whitespace
+                            let text: string = log.text;
+                            const prefixRegex = /^(Day|Dag)\s+\d+[:.]?\s*/i;
+                            text = text.replace(prefixRegex, "").trim();
+
+                            md += `> [!example] Day ${log.day}\n> ${text}\n\n`;
+                        }
+
+                        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                        if (activeView) {
+                            activeView.editor.replaceSelection(md);
+                            new Notice('Logs inserted!');
+                        }
+                    }).open();
+
+                } catch (error) {
+                    new Notice("Error fetching data: " + error.message);
+                }
+            }
+        });
+
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
     }
 
@@ -129,8 +209,12 @@ export default class HwysDnDToolsPlugin extends Plugin {
             }
 
             for (const log of data.recentLogs) {
-                // Use > [!example] for a "note" style card look, or > [!quote]
-                md += `> [!example] Day ${log.day}\n> ${log.text}\n\n`;
+                // Strip redundant "Day X"
+                let text: string = log.text;
+                const prefixRegex = /^(Day|Dag)\s+\d+[:.]?\s*/i;
+                text = text.replace(prefixRegex, "").trim();
+
+                md += `> [!example] Day ${log.day}\n> ${text}\n\n`;
             }
         }
 
@@ -232,11 +316,65 @@ class CaravanIdModal extends Modal {
     onClose() {
         const { contentEl } = this;
         contentEl.empty();
-        // Resolve with null if the modal is closed without submitting
-        // This was a subtle bug waiting to happen, better to check if onSubmit exists
         if (this.onSubmit) {
             this.onSubmit(null);
         }
+    }
+}
+
+class CaravanLogRangeModal extends Modal {
+    maxDay: number;
+    onSubmit: (min: number, max: number) => void;
+
+    constructor(app: App, maxDay: number, onSubmit: (min: number, max: number) => void) {
+        super(app);
+        this.maxDay = maxDay;
+        this.onSubmit = onSubmit;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h2", { text: "Select Log Range" });
+
+        const container = contentEl.createDiv({ cls: 'setting-item' });
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '10px';
+
+        // From
+        const fromDiv = container.createDiv();
+        fromDiv.createSpan({ text: "From Day: " });
+        const fromInput = fromDiv.createEl("input", { type: "number" });
+        fromInput.value = "1";
+        fromInput.min = "1";
+        fromInput.max = this.maxDay.toString();
+
+        // To
+        const toDiv = container.createDiv();
+        toDiv.createSpan({ text: "To Day: " });
+        const toInput = toDiv.createEl("input", { type: "number" });
+        toInput.value = this.maxDay.toString();
+        toInput.min = "1";
+        toInput.max = this.maxDay.toString();
+
+        const submitButton = contentEl.createEl("button", { text: "Fetch Logs" });
+        submitButton.style.marginTop = "1rem";
+        submitButton.addClass("mod-cta");
+
+        submitButton.addEventListener("click", () => {
+            const min = parseInt(fromInput.value);
+            const max = parseInt(toInput.value);
+            if (min > max) {
+                new Notice("Start day cannot be after end day.");
+                return;
+            }
+            this.onSubmit(min, max);
+            this.close();
+        });
+    }
+
+    onClose() {
+        this.contentEl.empty();
     }
 }
 
