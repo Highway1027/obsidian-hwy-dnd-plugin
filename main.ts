@@ -110,12 +110,9 @@ export default class HwysDnDToolsPlugin extends Plugin {
         if (data.materials && Object.keys(data.materials).length > 0) {
             let hasMaterials = false;
             for (const [key, value] of Object.entries(data.materials)) {
-                // Cast value to number to satisfy TypeScript's type safety
-                if (Number(value) > 0) {
-                    hasMaterials = true;
-                    const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
-                    md += `- **${capitalizedKey}:** ${value}/100\n`;
-                }
+                hasMaterials = true;
+                const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
+                md += `- **${capitalizedKey}:** ${value}/100\n`;
             }
             if (!hasMaterials) {
                 md += `_No materials._\n`;
