@@ -1,8 +1,133 @@
-/*
+/* Base Variables & Theme Defaults (Fallback to Dark/Default) */
+:root {
+    --hwy-bg-primary: 221, 39%, 11%;
+    /* Gray-900 */
+    --hwy-bg-secondary: 219, 28%, 17%;
+    /* Gray-800 */
+    --hwy-accent: 38, 92%, 50%;
+    /* Amber-600 */
+    --hwy-text-primary: 220, 13%, 91%;
+    /* Gray-200 */
+    --hwy-text-secondary: 220, 9%, 61%;
+    /* Gray-400 */
+    --hwy-border: 220, 14%, 26%;
+    /* Gray-700 */
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* Theme: Default (Dark) */
+.hwy-logs-container[data-theme="default"] {
+    --hwy-bg-primary: 221, 39%, 11%;
+    --hwy-bg-secondary: 219, 28%, 17%;
+    --hwy-accent: 38, 92%, 50%;
+    --hwy-text-primary: 220, 13%, 91%;
+    --hwy-text-secondary: 220, 9%, 61%;
+    --hwy-border: 220, 14%, 26%;
+}
 
-If your plugin does not need CSS, delete this file.
+/* Theme: Parchment (D&D) */
+.hwy-logs-container[data-theme="parchment"] {
+    --hwy-bg-primary: 46, 60%, 92%;
+    /* parchment background */
+    --hwy-bg-secondary: 44, 32%, 85%;
+    /* slightly darker parchment */
+    --hwy-accent: 0, 95%, 31%;
+    /* d&d red */
+    --hwy-text-primary: 30, 14%, 19%;
+    /* dark brown text */
+    --hwy-text-secondary: 30, 9%, 36%;
+    /* lighter brown text */
+    --hwy-border: 44, 19%, 70%;
+    /* faded border */
+}
 
-*/
+/* Theme: FFIX */
+.hwy-logs-container[data-theme="ffix"] {
+    --hwy-bg-primary: 227, 40%, 25%;
+    /* ffix dark blue */
+    --hwy-bg-secondary: 227, 40%, 30%;
+    /* slightly lighter blue */
+    --hwy-accent: 211, 100%, 75%;
+    /* ffix light blue accent */
+    --hwy-text-primary: 218, 25%, 95%;
+    /* near-white text */
+    --hwy-text-secondary: 216, 15%, 70%;
+    /* gray-blue text */
+    --hwy-border: 227, 40%, 38%;
+    /* brighter blue border */
+}
+
+/* Theme: Cyberpunk */
+.hwy-logs-container[data-theme="cyberpunk"] {
+    --hwy-bg-primary: 0, 0%, 2%;
+    /* #050505 - Almost black */
+    --hwy-bg-secondary: 0, 0%, 7%;
+    /* #121212 - Dark gray */
+    --hwy-accent: 54, 99%, 51%;
+    /* #Fcee0a - Cyberpunk Yellow */
+    --hwy-text-primary: 180, 14%, 94%;
+    /* #E6F1F1 - White with tiny cyan tint */
+    --hwy-text-secondary: 180, 5%, 61%;
+    /* Muted cyan-gray */
+    --hwy-border: 180, 100%, 25%;
+    /* Dark Cyan border */
+}
+
+/* Theme: Custom (Variables injected via inline style, fallbacks here) */
+.hwy-logs-container[data-theme="custom"] {
+    /* Values will be set on the element via style="" attribute */
+}
+
+/* --- Component Styling --- */
+
+.hwy-logs-container {
+    font-family: var(--font-text-theme);
+    line-height: 1.5;
+    margin-top: 1rem;
+}
+
+.hwy-log-card {
+    background-color: hsl(var(--hwy-bg-secondary));
+    border: 1px solid hsl(var(--hwy-border));
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    color: hsl(var(--hwy-text-primary));
+}
+
+.hwy-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid hsl(var(--hwy-border));
+}
+
+.hwy-day-badge {
+    color: hsl(var(--hwy-accent));
+    font-weight: 700;
+    font-size: 1.1em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.hwy-card-body {
+    white-space: pre-wrap;
+    /* Preserve newlines */
+    color: hsl(var(--hwy-text-secondary));
+}
+
+/* Parchment Specific Tweaks */
+.hwy-logs-container[data-theme="parchment"] .hwy-log-card {
+    box-shadow: inset 0 0 20px rgba(160, 140, 100, 0.2), 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: 1px solid hsl(var(--hwy-border));
+}
+
+.hwy-logs-container[data-theme="parchment"] .hwy-day-badge {
+    font-family: var(--font-interface-theme);
+    /* Use header font if available */
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}

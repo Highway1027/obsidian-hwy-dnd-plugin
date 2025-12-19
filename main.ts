@@ -3,15 +3,34 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 
 // Define the settings that our plugin will store.
+// Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
     apiToken: string;
     defaultCaravanId: string;
+    theme: 'default' | 'parchment' | 'ffix' | 'cyberpunk' | 'custom';
+    customColors: {
+        bgPrimary: string;
+        bgSecondary: string;
+        accent: string;
+        textPrimary: string;
+        textSecondary: string;
+        border: string;
+    }
 }
 
 // Set the default values for the settings.
 const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
     apiToken: '',
-    defaultCaravanId: ''
+    defaultCaravanId: '',
+    theme: 'default',
+    customColors: {
+        bgPrimary: '221, 39%, 11%',
+        bgSecondary: '219, 28%, 17%',
+        accent: '38, 92%, 50%',
+        textPrimary: '220, 13%, 91%',
+        textSecondary: '220, 9%, 61%',
+        border: '220, 14%, 26%'
+    }
 }
 
 // This is the main class for our plugin.
@@ -133,24 +152,37 @@ export default class HwysDnDToolsPlugin extends Plugin {
                             return;
                         }
 
-                        // 3. Format Validation
-                        let md = `### Caravan Logs (Day ${min} - ${max})\n\n`;
+                        // 3. Generate HTML Output
+                        let html = '';
+
+                        // Theme Container Setup
+                        let containerStyleResult = '';
+                        if (this.settings.theme === 'custom') {
+                            const c = this.settings.customColors;
+                            containerStyleResult = `style="--hwy-bg-primary: ${c.bgPrimary}; --hwy-bg-secondary: ${c.bgSecondary}; --hwy-accent: ${c.accent}; --hwy-text-primary: ${c.textPrimary}; --hwy-text-secondary: ${c.textSecondary}; --hwy-border: ${c.border};"`;
+                        }
+
+                        html += `<div class="hwy-logs-container" data-theme="${this.settings.theme}" ${containerStyleResult}>\n`;
+                        html += `<h3>Caravan Logs (Day ${min} - ${max})</h3>\n\n`;
+
                         for (const log of logs) {
-                            // Strip "Day X" / "Dag X" prefix if it exists in the body
-                            // Regex looks for "Day 123" or "Dag 123" followed by punctuation or whitespace
+                            // Strip "Day X" / "Dag X" prefix
                             let text: string = log.text;
                             const prefixRegex = /^(Day|Dag)\s+\d+[:.]?\s*/i;
                             text = text.replace(prefixRegex, "").trim();
 
-                            // Prefix every line with > to keep it inside the callout
-                            const formattedText = text.split('\n').map(line => `> ${line}`).join('\n');
-
-                            md += `> [!example] Day ${log.day}\n${formattedText}\n\n`;
+                            html += `  <div class="hwy-log-card">\n`;
+                            html += `    <div class="hwy-card-header">\n`;
+                            html += `      <span class="hwy-day-badge">Day ${log.day}</span>\n`;
+                            html += `    </div>\n`;
+                            html += `    <div class="hwy-card-body">${text}</div>\n`;
+                            html += `  </div>\n`;
                         }
+                        html += `</div>\n`;
 
                         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
                         if (activeView) {
-                            activeView.editor.replaceSelection(md);
+                            activeView.editor.replaceSelection(html);
                             new Notice('Logs inserted!');
                         }
                     }).open();
@@ -205,25 +237,40 @@ export default class HwysDnDToolsPlugin extends Plugin {
 
         // Recent Logs Section
         if (data.recentLogs && data.recentLogs.length > 0) {
-            md += `\n#### Recent Activity\n`;
+
+            // Theme Container Setup
+            let containerStyleResult = '';
+            if (this.settings.theme === 'custom') {
+                const c = this.settings.customColors;
+                containerStyleResult = `style="--hwy-bg-primary: ${c.bgPrimary}; --hwy-bg-secondary: ${c.bgSecondary}; --hwy-accent: ${c.accent}; --hwy-text-primary: ${c.textPrimary}; --hwy-text-secondary: ${c.textSecondary}; --hwy-border: ${c.border};"`;
+            }
+
+            md += `\n<div class="hwy-logs-container" data-theme="${this.settings.theme}" ${containerStyleResult}>\n`;
+            md += `<h4>Recent Activity</h4>\n`;
 
             if (data.logSummary) {
-                // Ensure summary lines are also quoted
-                const formattedSummary = data.logSummary.split('\n').map((line: string) => `> ${line}`).join('\n');
-                md += `> [!abstract] Weekly Summary\n${formattedSummary}\n\n`;
+                // Summary Card
+                md += `  <div class="hwy-log-card hwy-summary-card">\n`;
+                md += `    <div class="hwy-card-header">\n`;
+                md += `       <span class="hwy-day-badge">Weekly Summary</span>\n`;
+                md += `    </div>\n`;
+                md += `    <div class="hwy-card-body">${data.logSummary}</div>\n`;
+                md += `  </div>\n`;
             }
 
             for (const log of data.recentLogs) {
-                // Strip redundant "Day X"
                 let text: string = log.text;
                 const prefixRegex = /^(Day|Dag)\s+\d+[:.]?\s*/i;
                 text = text.replace(prefixRegex, "").trim();
 
-                // Prefix every line with > to keep it inside the callout
-                const formattedText = text.split('\n').map(line => `> ${line}`).join('\n');
-
-                md += `> [!example] Day ${log.day}\n${formattedText}\n\n`;
+                md += `  <div class="hwy-log-card">\n`;
+                md += `    <div class="hwy-card-header">\n`;
+                md += `      <span class="hwy-day-badge">Day ${log.day}</span>\n`;
+                md += `    </div>\n`;
+                md += `    <div class="hwy-card-body">${text}</div>\n`;
+                md += `  </div>\n`;
             }
+            md += `</div>\n`;
         }
 
         md += `\n`;
