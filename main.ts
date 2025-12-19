@@ -121,6 +121,19 @@ export default class HwysDnDToolsPlugin extends Plugin {
             md += `_No materials._\n`;
         }
 
+        // Recent Logs Section
+        if (data.recentLogs && data.recentLogs.length > 0) {
+            md += `\n#### Recent Activity\n`;
+
+            if (data.logSummary) {
+                md += `> [!SUMMARY] Weekly Summary\n> ${data.logSummary}\n\n`;
+            }
+
+            for (const log of data.recentLogs) {
+                md += `- **Day ${log.day}:** ${log.text}\n`;
+            }
+        }
+
         md += `\n`;
         return md;
     }
