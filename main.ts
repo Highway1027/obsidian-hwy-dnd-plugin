@@ -142,7 +142,10 @@ export default class HwysDnDToolsPlugin extends Plugin {
                             const prefixRegex = /^(Day|Dag)\s+\d+[:.]?\s*/i;
                             text = text.replace(prefixRegex, "").trim();
 
-                            md += `> [!example] Day ${log.day}\n> ${text}\n\n`;
+                            // Prefix every line with > to keep it inside the callout
+                            const formattedText = text.split('\n').map(line => `> ${line}`).join('\n');
+
+                            md += `> [!example] Day ${log.day}\n${formattedText}\n\n`;
                         }
 
                         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -205,7 +208,9 @@ export default class HwysDnDToolsPlugin extends Plugin {
             md += `\n#### Recent Activity\n`;
 
             if (data.logSummary) {
-                md += `> [!abstract] Weekly Summary\n> ${data.logSummary}\n\n`;
+                // Ensure summary lines are also quoted
+                const formattedSummary = data.logSummary.split('\n').map((line: string) => `> ${line}`).join('\n');
+                md += `> [!abstract] Weekly Summary\n${formattedSummary}\n\n`;
             }
 
             for (const log of data.recentLogs) {
@@ -214,7 +219,10 @@ export default class HwysDnDToolsPlugin extends Plugin {
                 const prefixRegex = /^(Day|Dag)\s+\d+[:.]?\s*/i;
                 text = text.replace(prefixRegex, "").trim();
 
-                md += `> [!example] Day ${log.day}\n> ${text}\n\n`;
+                // Prefix every line with > to keep it inside the callout
+                const formattedText = text.split('\n').map(line => `> ${line}`).join('\n');
+
+                md += `> [!example] Day ${log.day}\n${formattedText}\n\n`;
             }
         }
 
@@ -275,6 +283,21 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
                     this.plugin.settings.defaultCaravanId = value.trim();
                     await this.plugin.saveSettings();
                 }));
+
+        // Command Reference
+        containerEl.createEl('h3', { text: 'Available Commands', attr: { style: 'margin-top: 30px;' } });
+
+        containerEl.createEl('p', { text: 'Use these commands via the Command Palette (Ctrl/Cmd + P):' });
+
+        const cmdList = containerEl.createEl('ul');
+
+        const cmd1 = cmdList.createEl('li');
+        cmd1.createEl('strong', { text: 'Insert Caravan Status: ' });
+        cmd1.createSpan({ text: 'Inserts the full dashboard, resource counts, materials, and recent logs (last 7 days).' });
+
+        const cmd2 = cmdList.createEl('li');
+        cmd2.createEl('strong', { text: 'Insert Caravan Logs Range: ' });
+        cmd2.createSpan({ text: 'Prompts for a start and end day, then inserts log entries for that period.' });
     }
 }
 
