@@ -327,6 +327,7 @@ interface CombatantDraft {
     quantity: number;
     ac?: number;
     initiative_modifier?: number;
+    initiative?: number; // Added to store rolled value
     original_text_reference?: string;
 }
 
@@ -386,9 +387,8 @@ class InitiativeConnectorModal extends Modal {
             this.activeTrackers = data.activeTrackers || [];
 
             // Default to most recent if available? No, default to NEW usually safer unless obvious.
-            // Let's default to "NEW" to avoid accidental merges.
             this.selectedTrackerId = 'NEW';
-            this.newTrackerName = `Encounter from Obsidian notes`;
+            this.newTrackerName = (data as any).suggestedEncounterName || `Encounter from Obsidian notes`;
 
         } catch (error) {
             new Notice("Error parsing text: " + error.message);
@@ -458,6 +458,24 @@ class InitiativeConnectorModal extends Modal {
         const combatantsSection = mainContainer.createDiv();
         combatantsSection.createEl("h3", { text: "Review Combatants" });
 
+        // Header Row
+        const headerRow = combatantsSection.createDiv();
+        headerRow.style.display = 'grid';
+        headerRow.style.gridTemplateColumns = '2fr 0.5fr 0.8fr 0.8fr 0.5fr 20px'; // Name, Qty, InitMod, InitVal, Roll, Del
+        headerRow.style.gap = '5px';
+        headerRow.style.marginBottom = '5px';
+        headerRow.style.fontWeight = 'bold';
+        headerRow.style.fontSize = '0.8em';
+        headerRow.style.color = 'var(--text-muted)';
+
+        headerRow.createDiv({ text: "Name" });
+        headerRow.createDiv({ text: "Qty" });
+        headerRow.createDiv({ text: "Init Mod" });
+        headerRow.createDiv({ text: "Init" });
+        headerRow.createDiv({ text: "Roll" });
+        headerRow.createDiv({ text: "" });
+
+
         const listDiv = combatantsSection.createDiv();
         listDiv.style.overflowY = 'auto';
         listDiv.style.maxHeight = '300px';
@@ -465,7 +483,7 @@ class InitiativeConnectorModal extends Modal {
         this.parsedCombatants.forEach((c, index) => {
             const row = listDiv.createDiv();
             row.style.display = 'grid';
-            row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr 20px';
+            row.style.gridTemplateColumns = '2fr 0.5fr 0.8fr 0.8fr 0.5fr 20px';
             row.style.gap = '5px';
             row.style.marginBottom = '5px';
             row.style.alignItems = 'center';
@@ -473,40 +491,84 @@ class InitiativeConnectorModal extends Modal {
             // Name
             const cName = row.createEl("input", { type: "text", value: c.name });
             cName.placeholder = "Name";
+            cName.style.width = '100%';
             cName.addEventListener('change', (e) => c.name = (e.target as HTMLInputElement).value);
 
             // Qty
             const cQty = row.createEl("input", { type: "number", value: String(c.quantity) });
-            cQty.placeholder = "Qty";
+            cQty.placeholder = "#";
             cQty.min = "1";
+            cQty.style.width = '100%';
             cQty.addEventListener('change', (e) => c.quantity = parseInt((e.target as HTMLInputElement).value));
 
-            // AC
-            const cAC = row.createEl("input", { type: "number", value: c.ac ? String(c.ac) : "" });
-            cAC.placeholder = "AC";
-            cAC.addEventListener('change', (e) => c.ac = parseInt((e.target as HTMLInputElement).value) || undefined);
+            // Init Mod (No longer hidden AC)
+            const cInitMod = row.createEl("input", { type: "number", value: c.initiative_modifier !== undefined ? String(c.initiative_modifier) : "0" });
+            cInitMod.placeholder = "+/-";
+            cInitMod.style.width = '100%';
+            cInitMod.title = "Dexterity Modifier";
+            cInitMod.addEventListener('change', (e) => c.initiative_modifier = parseInt((e.target as HTMLInputElement).value) || 0);
 
-            // Init Mod
-            const cInit = row.createEl("input", { type: "number", value: c.initiative_modifier ? String(c.initiative_modifier) : "" });
-            cInit.placeholder = "Init Mod";
-            cInit.addEventListener('change', (e) => c.initiative_modifier = parseInt((e.target as HTMLInputElement).value) || undefined);
+            // Init Value (The actual roll)
+            // Use 'any' type cast if 'initiative' is missing in definition, but better to update interface.
+            // For now, I'll assume we add 'initiative' to CombatantDraft.
+            const cInitVal = row.createEl("input", { type: "number", value: (c as any).initiative ? String((c as any).initiative) : "" });
+            cInitVal.placeholder = "Roll";
+            cInitVal.style.width = '100%';
+            cInitVal.addEventListener('change', (e) => (c as any).initiative = parseInt((e.target as HTMLInputElement).value) || undefined);
+
+            // Roll Button
+            const rollBtn = row.createEl("button", { text: "🎲" });
+            rollBtn.title = "Roll d20 + Mod";
+            rollBtn.style.padding = '0 5px';
+            rollBtn.addEventListener('click', () => {
+                const mod = c.initiative_modifier || 0;
+                const roll = Math.floor(Math.random() * 20) + 1;
+                const total = roll + mod;
+                (c as any).initiative = total;
+                cInitVal.value = String(total);
+                new Notice(`Rolled ${roll} + ${mod} = ${total} for ${c.name}`);
+            });
 
             // Delete Btn
             const delBtn = row.createEl("button", { text: "X" });
             delBtn.style.color = 'var(--text-error)';
+            delBtn.style.padding = '0 5px';
             delBtn.addEventListener('click', () => {
                 this.parsedCombatants.splice(index, 1);
                 this.display(); // Re-render
             });
         });
 
-        // Add Manual Row Button
-        const addBtn = combatantsSection.createEl("button", { text: "+ Add Row" });
+        // Add Manual Row Button + Roll All
+        const actionsRow = combatantsSection.createDiv();
+        actionsRow.style.display = 'flex';
+        actionsRow.style.gap = '10px';
+        actionsRow.style.marginTop = '10px';
+
+        const addBtn = actionsRow.createEl("button", { text: "+ Add Row" });
         addBtn.addEventListener('click', () => {
-            this.parsedCombatants.push({ name: "New Enemy", quantity: 1 });
+            this.parsedCombatants.push({ name: "New Enemy", quantity: 1, initiative_modifier: 0 });
             this.display();
         });
 
+        const rollAllBtn = actionsRow.createEl("button", { text: "🎲 Roll All Empty" });
+        rollAllBtn.addEventListener('click', () => {
+            let rolledCount = 0;
+            this.parsedCombatants.forEach(c => {
+                if (!(c as any).initiative) {
+                    const mod = c.initiative_modifier || 0;
+                    const roll = Math.floor(Math.random() * 20) + 1;
+                    (c as any).initiative = roll + mod;
+                    rolledCount++;
+                }
+            });
+            if (rolledCount > 0) {
+                this.display();
+                new Notice(`Rolled initiative for ${rolledCount} combatants.`);
+            } else {
+                new Notice("All combatants already have initiative.");
+            }
+        });
 
         // 3. Footer Actions
         const footer = contentEl.createDiv();
