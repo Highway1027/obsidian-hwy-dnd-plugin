@@ -358,6 +358,7 @@ class InitiativeConnectorModal extends Modal {
     }
 
     async onOpen() {
+        this.containerEl.addClass("mod-wide"); // Widen the modal
         await this.fetchParsedData();
         this.display();
     }
@@ -556,59 +557,22 @@ class InitiativeConnectorModal extends Modal {
                 // Spacer for alignment if no expand button
                 row.createDiv();
             }
-            rollBtn.title = "Roll d20 + Mod";
-            rollBtn.style.padding = '0 5px';
-            rollBtn.addEventListener('click', () => {
-                const mod = c.initiative_modifier || 0;
-                const roll = Math.floor(Math.random() * 20) + 1;
-                const total = roll + mod;
-                (c as any).initiative = total;
-                cInitVal.value = String(total);
-                new Notice(`Rolled ${roll} + ${mod} = ${total} for ${c.name}`);
-            });
 
-            // Expand/Split Button (Only if Qty > 1)
-            if (c.quantity > 1) {
-                const expandBtn = row.createEl("button", { text: "↔" });
-                expandBtn.title = "Split into individual rows";
-                expandBtn.style.padding = '0 5px';
-                expandBtn.style.fontWeight = 'bold';
-                expandBtn.addEventListener('click', () => {
-                    // 1. Remove this row
-                    this.parsedCombatants.splice(index, 1);
 
-                    // 2. Add N new rows
-                    for (let i = 0; i < c.quantity; i++) {
-                        this.parsedCombatants.splice(index + i, 0, {
-                            name: `${c.name} ${i + 1}`,
-                            quantity: 1,
-                            ac: c.ac,
-                            initiative_modifier: c.initiative_modifier,
-                            initiative: undefined // Force new roll
-                        });
-                    }
-                    // 3. Re-render
-                    this.display();
-                });
-            } else {
-                // Spacer for alignment if no expand button
-                row.createDiv();
-            }
-            rollBtn.title = "Roll d20 + Mod";
-            rollBtn.style.padding = '0 5px';
-            rollBtn.addEventListener('click', () => {
-                const mod = c.initiative_modifier || 0;
-                const roll = Math.floor(Math.random() * 20) + 1;
-                const total = roll + mod;
-                (c as any).initiative = total;
-                cInitVal.value = String(total);
-                new Notice(`Rolled ${roll} + ${mod} = ${total} for ${c.name}`);
-            });
+
+
+
 
             // Delete Btn
             const delBtn = row.createEl("button", { text: "X" });
             delBtn.style.color = 'var(--text-error)';
-            delBtn.style.padding = '0 5px';
+            delBtn.style.padding = '0';
+            delBtn.style.height = '24px';
+            delBtn.style.width = '24px';
+            delBtn.style.display = 'flex';
+            delBtn.style.alignItems = 'center';
+            delBtn.style.justifyContent = 'center';
+            delBtn.title = "Remove";
             delBtn.addEventListener('click', () => {
                 this.parsedCombatants.splice(index, 1);
                 this.display(); // Re-render
