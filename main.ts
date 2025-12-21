@@ -192,6 +192,40 @@ export default class HwysDnDToolsPlugin extends Plugin {
             }
         });
 
+        // ... (Existing code)
+
+        // Command: Send Selection to Initiative
+        this.addCommand({
+            id: 'send-selection-to-initiative',
+            name: 'Send Selection to Initiative',
+            callback: async () => {
+                const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!activeView) {
+                    new Notice('No active editor found.');
+                    return;
+                }
+
+                const selection = activeView.editor.getSelection();
+                if (!selection) {
+                    new Notice('Please select some text first.');
+                    return;
+                }
+
+                if (!this.settings.apiToken) {
+                    new Notice('Error: API Token not set.');
+                    return;
+                }
+
+                let caravanId: string | null = this.settings.defaultCaravanId;
+                if (!caravanId) {
+                    caravanId = await this.promptForCaravanId();
+                    if (!caravanId) return;
+                }
+
+                new InitiativeConnectorModal(this.app, this, selection, caravanId).open();
+            }
+        });
+
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
     }
 
@@ -287,6 +321,249 @@ export default class HwysDnDToolsPlugin extends Plugin {
     }
 }
 
+// Interaces for API responses
+interface CombatantDraft {
+    name: string;
+    quantity: number;
+    ac?: number;
+    initiative_modifier?: number;
+    original_text_reference?: string;
+}
+
+interface ActiveTracker {
+    id: string;
+    name: string;
+    round: number;
+    updatedAt: any;
+}
+
+class InitiativeConnectorModal extends Modal {
+    plugin: HwysDnDToolsPlugin;
+    text: string;
+    caravanId: string;
+
+    // State
+    loading: boolean = false;
+    parsedCombatants: CombatantDraft[] = [];
+    activeTrackers: ActiveTracker[] = [];
+    selectedTrackerId: string = 'NEW';
+    newTrackerName: string = '';
+
+    constructor(app: App, plugin: HwysDnDToolsPlugin, text: string, caravanId: string) {
+        super(app);
+        this.plugin = plugin;
+        this.text = text;
+        this.caravanId = caravanId;
+    }
+
+    async onOpen() {
+        await this.fetchParsedData();
+        this.display();
+    }
+
+    async fetchParsedData() {
+        this.loading = true;
+        this.display(); // Show loading state
+
+        try {
+            const projectId = 'wildshape-tracker';
+            const region = 'europe-west1';
+            const url = `https://${region}-${projectId}.cloudfunctions.net/obsidianParseCombatText`;
+
+            const response = await requestUrl({
+                url: url,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    apiToken: this.plugin.settings.apiToken,
+                    caravanId: this.caravanId,
+                    text: this.text
+                })
+            });
+
+            const data = response.json;
+            this.parsedCombatants = data.parsedCombatants || [];
+            this.activeTrackers = data.activeTrackers || [];
+
+            // Default to most recent if available? No, default to NEW usually safer unless obvious.
+            // Let's default to "NEW" to avoid accidental merges.
+            this.selectedTrackerId = 'NEW';
+            this.newTrackerName = `Encounter from Obsidian notes`;
+
+        } catch (error) {
+            new Notice("Error parsing text: " + error.message);
+            this.close();
+            return;
+        } finally {
+            this.loading = false;
+            this.display();
+        }
+    }
+
+    display() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl("h2", { text: "Send to Initiative Tracker" });
+
+        if (this.loading) {
+            contentEl.createDiv({ text: "Parsing text with Gemini AI...", cls: "loading-spinner" }); // (Simple text for now)
+            return;
+        }
+
+        const mainContainer = contentEl.createDiv();
+        mainContainer.style.display = 'flex';
+        mainContainer.style.flexDirection = 'column';
+        mainContainer.style.gap = '15px';
+
+        // 1. Tracker Selection
+        const trackerSection = mainContainer.createDiv({ cls: 'setting-item' });
+        trackerSection.style.flexDirection = 'column';
+        trackerSection.style.alignItems = 'flex-start';
+
+        trackerSection.createEl("h3", { text: "Target Tracker" });
+
+        const trackerSelect = trackerSection.createEl("select");
+        trackerSelect.style.width = '100%';
+
+        // Option: New
+        const newOpt = trackerSelect.createEl("option", { value: "NEW", text: "[Create New Tracker]" });
+        newOpt.selected = this.selectedTrackerId === 'NEW';
+
+        // Options: Existing
+        this.activeTrackers.forEach(t => {
+            const opt = trackerSelect.createEl("option", { value: t.id, text: `${t.name} (Round ${t.round})` });
+            if (t.id === this.selectedTrackerId) opt.selected = true;
+        });
+
+        trackerSelect.addEventListener('change', () => {
+            this.selectedTrackerId = trackerSelect.value;
+            const nameInputDiv = this.contentEl.querySelector('#hwy-new-tracker-name') as HTMLElement;
+            if (nameInputDiv) nameInputDiv.style.display = this.selectedTrackerId === 'NEW' ? 'block' : 'none';
+        });
+
+        // New Tracker Name Input
+        const nameInputDiv = trackerSection.createDiv();
+        nameInputDiv.id = 'hwy-new-tracker-name';
+        nameInputDiv.style.width = '100%';
+        nameInputDiv.style.marginTop = '5px';
+        nameInputDiv.style.display = this.selectedTrackerId === 'NEW' ? 'block' : 'none';
+
+        const nameInput = nameInputDiv.createEl("input", { type: "text", value: this.newTrackerName });
+        nameInput.placeholder = "New Tracker Name";
+        nameInput.style.width = '100%';
+        nameInput.addEventListener('input', (e) => this.newTrackerName = (e.target as HTMLInputElement).value);
+
+
+        // 2. Combatants Review
+        const combatantsSection = mainContainer.createDiv();
+        combatantsSection.createEl("h3", { text: "Review Combatants" });
+
+        const listDiv = combatantsSection.createDiv();
+        listDiv.style.overflowY = 'auto';
+        listDiv.style.maxHeight = '300px';
+
+        this.parsedCombatants.forEach((c, index) => {
+            const row = listDiv.createDiv();
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr 20px';
+            row.style.gap = '5px';
+            row.style.marginBottom = '5px';
+            row.style.alignItems = 'center';
+
+            // Name
+            const cName = row.createEl("input", { type: "text", value: c.name });
+            cName.placeholder = "Name";
+            cName.addEventListener('change', (e) => c.name = (e.target as HTMLInputElement).value);
+
+            // Qty
+            const cQty = row.createEl("input", { type: "number", value: String(c.quantity) });
+            cQty.placeholder = "Qty";
+            cQty.min = "1";
+            cQty.addEventListener('change', (e) => c.quantity = parseInt((e.target as HTMLInputElement).value));
+
+            // AC
+            const cAC = row.createEl("input", { type: "number", value: c.ac ? String(c.ac) : "" });
+            cAC.placeholder = "AC";
+            cAC.addEventListener('change', (e) => c.ac = parseInt((e.target as HTMLInputElement).value) || undefined);
+
+            // Init Mod
+            const cInit = row.createEl("input", { type: "number", value: c.initiative_modifier ? String(c.initiative_modifier) : "" });
+            cInit.placeholder = "Init Mod";
+            cInit.addEventListener('change', (e) => c.initiative_modifier = parseInt((e.target as HTMLInputElement).value) || undefined);
+
+            // Delete Btn
+            const delBtn = row.createEl("button", { text: "X" });
+            delBtn.style.color = 'var(--text-error)';
+            delBtn.addEventListener('click', () => {
+                this.parsedCombatants.splice(index, 1);
+                this.display(); // Re-render
+            });
+        });
+
+        // Add Manual Row Button
+        const addBtn = combatantsSection.createEl("button", { text: "+ Add Row" });
+        addBtn.addEventListener('click', () => {
+            this.parsedCombatants.push({ name: "New Enemy", quantity: 1 });
+            this.display();
+        });
+
+
+        // 3. Footer Actions
+        const footer = contentEl.createDiv();
+        footer.style.display = 'flex';
+        footer.style.justifyContent = 'flex-end';
+        footer.style.gap = '10px';
+        footer.style.marginTop = '20px';
+
+        const cancelBtn = footer.createEl("button", { text: "Cancel" });
+        cancelBtn.addEventListener('click', () => this.close());
+
+        const confirmBtn = footer.createEl("button", { text: "Send to Tracker" });
+        confirmBtn.addClass("mod-cta");
+        confirmBtn.addEventListener('click', () => this.submit());
+    }
+
+    async submit() {
+        // Validate
+        if (this.parsedCombatants.length === 0) {
+            new Notice("No combatants to add.");
+            return;
+        }
+
+        try {
+            const projectId = 'wildshape-tracker';
+            const region = 'europe-west1';
+            const url = `https://${region}-${projectId}.cloudfunctions.net/obsidianAddCombatants`;
+
+            new Notice("Sending to tracker...");
+
+            await requestUrl({
+                url: url,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    apiToken: this.plugin.settings.apiToken,
+                    caravanId: this.caravanId,
+                    trackerId: this.selectedTrackerId,
+                    newTrackerName: this.newTrackerName,
+                    combatants: this.parsedCombatants
+                })
+            });
+
+            new Notice("Successfully added to Initiative Tracker!");
+            this.close();
+
+        } catch (error) {
+            new Notice("Error sending data: " + error.message);
+        }
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
+// ... (Existing SettingTab and Modals)
 class HwysDnDToolsSettingTab extends PluginSettingTab {
     plugin: HwysDnDToolsPlugin;
 
@@ -383,8 +660,13 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
         const cmd2 = cmdList.createEl('li');
         cmd2.createEl('strong', { text: 'Insert Caravan Logs Range: ' });
         cmd2.createSpan({ text: 'Prompts for a start and end day, then inserts log entries for that period.' });
+
+        const cmd3 = cmdList.createEl('li');
+        cmd3.createEl('strong', { text: 'Send Selection to Initiative: ' });
+        cmd3.createSpan({ text: 'Parses selected text for monsters/NPCs and sends them to the Wildshape Tracker (Active or New).' });
     }
 }
+// ...
 
 class CaravanIdModal extends Modal {
     result: string;
