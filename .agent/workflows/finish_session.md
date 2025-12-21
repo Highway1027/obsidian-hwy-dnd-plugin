@@ -22,3 +22,5 @@ description: Finish the coding session by bumping the version and pushing change
 
 5. Confirm completion.
    - "Version bumped and pushed. The GitHub Action should now be building and releasing the new version."
+
+..
