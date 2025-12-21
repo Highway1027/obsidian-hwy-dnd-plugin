@@ -483,7 +483,7 @@ class InitiativeConnectorModal extends Modal {
         this.parsedCombatants.forEach((c, index) => {
             const row = listDiv.createDiv();
             row.style.display = 'grid';
-            row.style.gridTemplateColumns = '2fr 0.5fr 0.8fr 0.8fr 0.5fr 20px';
+            row.style.gridTemplateColumns = '2fr 0.5fr 0.8fr 0.8fr 0.5fr 0.5fr 20px';
             row.style.gap = '5px';
             row.style.marginBottom = '5px';
             row.style.alignItems = 'center';
@@ -518,6 +518,82 @@ class InitiativeConnectorModal extends Modal {
 
             // Roll Button
             const rollBtn = row.createEl("button", { text: "🎲" });
+            rollBtn.title = "Roll d20 + Mod";
+            rollBtn.style.padding = '0 5px';
+            rollBtn.addEventListener('click', () => {
+                const mod = c.initiative_modifier || 0;
+                const roll = Math.floor(Math.random() * 20) + 1;
+                const total = roll + mod;
+                (c as any).initiative = total;
+                cInitVal.value = String(total);
+                new Notice(`Rolled ${roll} + ${mod} = ${total} for ${c.name}`);
+            });
+
+            // Expand/Split Button (Only if Qty > 1)
+            if (c.quantity > 1) {
+                const expandBtn = row.createEl("button", { text: "↔" });
+                expandBtn.title = "Split into individual rows";
+                expandBtn.style.padding = '0 5px';
+                expandBtn.style.fontWeight = 'bold';
+                expandBtn.addEventListener('click', () => {
+                    // 1. Remove this row
+                    this.parsedCombatants.splice(index, 1);
+
+                    // 2. Add N new rows with numbering
+                    for (let i = 0; i < c.quantity; i++) {
+                        this.parsedCombatants.splice(index + i, 0, {
+                            name: `${c.name} ${i + 1}`,
+                            quantity: 1,
+                            ac: c.ac,
+                            initiative_modifier: c.initiative_modifier,
+                            initiative: undefined // Force new roll
+                        });
+                    }
+                    // 3. Re-render
+                    this.display();
+                });
+            } else {
+                // Spacer for alignment if no expand button
+                row.createDiv();
+            }
+            rollBtn.title = "Roll d20 + Mod";
+            rollBtn.style.padding = '0 5px';
+            rollBtn.addEventListener('click', () => {
+                const mod = c.initiative_modifier || 0;
+                const roll = Math.floor(Math.random() * 20) + 1;
+                const total = roll + mod;
+                (c as any).initiative = total;
+                cInitVal.value = String(total);
+                new Notice(`Rolled ${roll} + ${mod} = ${total} for ${c.name}`);
+            });
+
+            // Expand/Split Button (Only if Qty > 1)
+            if (c.quantity > 1) {
+                const expandBtn = row.createEl("button", { text: "↔" });
+                expandBtn.title = "Split into individual rows";
+                expandBtn.style.padding = '0 5px';
+                expandBtn.style.fontWeight = 'bold';
+                expandBtn.addEventListener('click', () => {
+                    // 1. Remove this row
+                    this.parsedCombatants.splice(index, 1);
+
+                    // 2. Add N new rows
+                    for (let i = 0; i < c.quantity; i++) {
+                        this.parsedCombatants.splice(index + i, 0, {
+                            name: `${c.name} ${i + 1}`,
+                            quantity: 1,
+                            ac: c.ac,
+                            initiative_modifier: c.initiative_modifier,
+                            initiative: undefined // Force new roll
+                        });
+                    }
+                    // 3. Re-render
+                    this.display();
+                });
+            } else {
+                // Spacer for alignment if no expand button
+                row.createDiv();
+            }
             rollBtn.title = "Roll d20 + Mod";
             rollBtn.style.padding = '0 5px';
             rollBtn.addEventListener('click', () => {
