@@ -73,9 +73,8 @@
 }
 
 /* Theme: Custom (Variables injected via inline style, fallbacks here) */
-.hwy-logs-container[data-theme="custom"] {
-    /* Values will be set on the element via style="" attribute */
-}
+/* Theme: Custom (Variables injected via inline style) */
+/* .hwy-logs-container[data-theme="custom"] {} - Removed to prevent empty ruleset warning */
 
 /* --- Component Styling --- */
 
