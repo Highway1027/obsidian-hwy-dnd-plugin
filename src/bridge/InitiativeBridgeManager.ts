@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v5 - 25-02-2026 - Fix first-load PCs, disconnect guard, save-state encounter wipe guard
+// v6 - 25-02-2026 - Use setCreatureFullStats for PC HP, no auto-removal, assign obsidianId
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -335,34 +335,41 @@ export class InitiativeBridgeManager {
 
         const combatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
 
-        // Find all combatants that reference this character
         for (const combatant of combatants) {
             const refId = combatant.pcId || (combatant as any).ownerId;
             if (refId !== pcId) continue;
 
             const name = combatant.name;
-
-            // HP changed
             const currentHP = charData.currentHP ?? charData.hp;
+            const maxHP = charData.maxHP ?? charData.maxHp;
+            const ac = charData.armorClass ?? charData.ac;
+
+            // On first load or significant change, set all stats at once
+            if (!prevData && currentHP !== undefined && maxHP !== undefined) {
+                this.itAccess.setCreatureFullStats(name, currentHP, maxHP, ac);
+                console.log(`[Bridge] PC initial stats: "${name}" → ${currentHP}/${maxHP} AC:${ac}`);
+                continue;
+            }
+
+            // Incremental updates
             const prevHP = prevData ? (prevData.currentHP ?? prevData.hp) : undefined;
+            const prevMaxHP = prevData ? (prevData.maxHP ?? prevData.maxHp) : undefined;
+            const prevAC = prevData ? (prevData.armorClass ?? prevData.ac) : undefined;
+
+            let changed = false;
             if (currentHP !== undefined && currentHP !== prevHP) {
                 this.itAccess.setCreatureHP(name, currentHP);
                 console.log(`[Bridge] PC HP sync: "${name}" → ${currentHP}`);
+                changed = true;
             }
-
-            // Max HP changed
-            const maxHP = charData.maxHP ?? charData.maxHp;
-            const prevMaxHP = prevData ? (prevData.maxHP ?? prevData.maxHp) : undefined;
             if (maxHP !== undefined && maxHP !== prevMaxHP) {
                 this.itAccess.setCreatureMaxHP(name, maxHP);
+                changed = true;
             }
-
-            // AC changed
-            const ac = charData.armorClass ?? charData.ac;
-            const prevAC = prevData ? (prevData.armorClass ?? prevData.ac) : undefined;
             if (ac !== undefined && ac !== prevAC) {
                 this.itAccess.setCreatureAC(name, ac);
                 console.log(`[Bridge] PC AC sync: "${name}" → ${ac}`);
+                changed = true;
             }
         }
     }
@@ -516,6 +523,53 @@ export class InitiativeBridgeManager {
             creature: itCreature,
             initiative: combatant.initiative ?? 0,
         }]);
+
+        // After adding, find the IT creature and save its ID back to Firestore
+        // This enables reliable matching even after webapp name changes
+        if (!combatant.obsidianId) {
+            this.assignObsidianId(combatant);
+        }
+    }
+
+    /**
+     * After adding a webapp combatant to IT, find its assigned ID and 
+     * write it back as obsidianId on the Firestore combatant.
+     */
+    private async assignObsidianId(combatant: WebappCombatant): Promise<void> {
+        const db = getDb();
+        if (!db || !this.caravanId || !this.trackerId) return;
+
+        const creatures = this.itAccess.getOrderedCreatures();
+        const match = creatures.find((c: any) => {
+            const name = getCreatureDisplayName(c);
+            return name === combatant.name || c.name === combatant.name;
+        });
+
+        if (!match) return;
+
+        const obsidianId = match.id as string;
+        console.log(`[Bridge] Assigned obsidianId "${obsidianId}" to "${combatant.name}"`);
+
+        // Update the Firestore combatant with the obsidianId
+        const trackerRef = doc(db, 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId);
+        const currentCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
+
+        const updated = currentCombatants.map(c => {
+            if (c.id === combatant.id || c.name === combatant.name) {
+                return { ...c, obsidianId };
+            }
+            return c;
+        });
+
+        this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
+        try {
+            await updateDoc(trackerRef, {
+                combatants: updated,
+                updatedAt: serverTimestamp(),
+            });
+        } catch (err) {
+            console.error('[Bridge] Failed to assign obsidianId:', err);
+        }
     }
 
     private handleRemovedCombatantFromFirestore(combatant: WebappCombatant): void {
@@ -642,18 +696,15 @@ export class InitiativeBridgeManager {
             needsFullCombatantUpdate = true;
         }
 
-        // --- Detect removed creatures ---
-        const removedIds: string[] = [];
+        // --- Detect removed creatures (log only, don't remove from Firestore) ---
+        // We intentionally do NOT remove creatures from Firestore when they disappear from IT.
+        // This prevents new encounters from wiping the webapp's tracker.
+        // Removal should be done manually from the webapp.
         for (const prevId of this.lastITCreatureIds) {
             if (!currentIds.has(prevId)) {
-                removedIds.push(prevId);
                 const prevName = this.lastITCreatureMap.get(prevId)?.name;
-                console.log(`[Bridge] Creature removed from IT: "${prevName}"`);
+                console.log(`[Bridge] Creature no longer in IT (not removing from Firestore): "${prevName}"`);
             }
-        }
-
-        if (removedIds.length > 0) {
-            needsFullCombatantUpdate = true;
         }
 
         // --- Detect changes per creature ---
@@ -726,12 +777,8 @@ export class InitiativeBridgeManager {
 
         // --- Build final combatant array ---
         if (needsFullCombatantUpdate) {
-            // Remove deleted creatures
-            let result = currentFirestoreCombatants.filter(c =>
-                !removedIds.includes(c.obsidianId || '')
-            );
-            // Add new monsters
-            result = [...result, ...newMonsters];
+            // Add new monsters (no removal — that's webapp-only)
+            let result = [...currentFirestoreCombatants, ...newMonsters];
             firestoreUpdate.combatants = result;
         }
 

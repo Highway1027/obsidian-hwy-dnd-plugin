@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v3 - 25-02-2026 - Fixed HP setter, added AC setter, added kill method with Unconscious
+// v4 - 25-02-2026 - Added setCreatureFullHP for direct HP/maxHP set, fixed setCreatureMaxHP
 
 import { App, Notice } from 'obsidian';
 
@@ -241,12 +241,48 @@ export class ITPluginAccess {
     }
 
     /**
-     * Set a creature's max HP.
+     * Set a creature's max HP (absolute, not delta).
+     * updateCreatureByName's `max` is a DELTA, so we directly manipulate the creature.
      */
     setCreatureMaxHP(name: string, maxHp: number): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) return false;
-        store.updateCreatureByName(name, { set_max_hp: maxHp });
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) return false;
+
+        creature.max = maxHp;
+        creature.current_max = maxHp;
+        if (creature.hp > maxHp) creature.hp = maxHp;
+        store.updateAndSave();
+        return true;
+    }
+
+    /**
+     * Set HP, maxHP, and AC all at once.
+     * Used for initial PC setup where the creature was created with hp=0.
+     */
+    setCreatureFullStats(name: string, hp: number, maxHp: number, ac?: number | string): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) {
+            console.warn(`[ITPluginAccess] Creature "${name}" not found for full stats`);
+            return false;
+        }
+
+        creature.hp = hp;
+        creature.max = maxHp;
+        creature.current_max = maxHp;
+        if (ac !== undefined) {
+            creature.ac = ac;
+            creature.current_ac = ac;
+        }
+        store.updateAndSave();
+        console.log(`[ITPluginAccess] Full stats set for "${name}": ${hp}/${maxHp} AC:${ac}`);
         return true;
     }
 
