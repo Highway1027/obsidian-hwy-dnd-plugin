@@ -1,6 +1,9 @@
 // main.ts
-// v8 - Fixed TypeScript error for 'unknown' value type in materials loop.
+// v9 - 25-02-2026 - Added Initiative Bridge integration (Firebase SDK + IT plugin sync)
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
+import { InitiativeBridgeManager } from './src/bridge/InitiativeBridgeManager';
+import { ShareInitiativeModal } from './src/bridge/ShareInitiativeModal';
+import { signOutFirebase } from './src/firebase';
 
 // Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
@@ -14,7 +17,9 @@ interface HwysDnDToolsSettings {
         textPrimary: string;
         textSecondary: string;
         border: string;
-    }
+    };
+    enableInitiativeBridge: boolean;
+    lastUsedCaravanId: string;
 }
 
 // Set the default values for the settings.
@@ -29,12 +34,15 @@ const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
         textPrimary: '220, 13%, 91%',
         textSecondary: '220, 9%, 61%',
         border: '220, 14%, 26%'
-    }
+    },
+    enableInitiativeBridge: false,
+    lastUsedCaravanId: '',
 }
 
 // This is the main class for our plugin.
 export default class HwysDnDToolsPlugin extends Plugin {
     settings: HwysDnDToolsSettings;
+    bridgeManager: InitiativeBridgeManager | null = null;
 
     // This function runs when the plugin is first loaded.
     async onload() {
@@ -226,6 +234,50 @@ export default class HwysDnDToolsPlugin extends Plugin {
             }
         });
 
+        // Command: Share Initiative to Webapp (Initiative Bridge)
+        if (this.settings.enableInitiativeBridge) {
+            this.bridgeManager = new InitiativeBridgeManager(this.app);
+
+            this.addCommand({
+                id: 'share-initiative',
+                name: 'Share Initiative to Webapp',
+                callback: async () => {
+                    if (!this.settings.apiToken) {
+                        new Notice('Error: API Token not set. Please add it in the plugin settings.');
+                        return;
+                    }
+
+                    if (!this.bridgeManager) {
+                        this.bridgeManager = new InitiativeBridgeManager(this.app);
+                    }
+
+                    new ShareInitiativeModal(
+                        this.app,
+                        {
+                            apiToken: this.settings.apiToken,
+                            caravanId: this.settings.defaultCaravanId,
+                            lastUsedCaravanId: this.settings.lastUsedCaravanId,
+                            enableInitiativeBridge: this.settings.enableInitiativeBridge,
+                        },
+                        this.bridgeManager,
+                        async () => { await this.saveSettings(); }
+                    ).open();
+                }
+            });
+
+            this.addCommand({
+                id: 'disconnect-initiative',
+                name: 'Disconnect Initiative Bridge',
+                callback: async () => {
+                    if (this.bridgeManager?.isConnected) {
+                        await this.bridgeManager.disconnect();
+                    } else {
+                        new Notice('Initiative Bridge is not connected.');
+                    }
+                }
+            });
+        }
+
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
     }
 
@@ -310,7 +362,13 @@ export default class HwysDnDToolsPlugin extends Plugin {
         return md;
     }
 
-    onunload() { }
+    async onunload() {
+        // Disconnect bridge on plugin unload
+        if (this.bridgeManager?.isConnected) {
+            await this.bridgeManager.disconnect();
+        }
+        await signOutFirebase();
+    }
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -748,6 +806,27 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
             addColorSetting('Border Color', 'Border color', 'border');
         }
 
+        // Initiative Bridge Section
+        containerEl.createEl('h3', { text: 'Initiative Bridge', attr: { style: 'margin-top: 30px;' } });
+
+        new Setting(containerEl)
+            .setName('Enable Initiative Bridge')
+            .setDesc('Enables real-time sync between the Obsidian Initiative Tracker plugin and the webapp. Requires the javalent Initiative Tracker plugin to be installed. Restart Obsidian after changing this setting.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableInitiativeBridge)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableInitiativeBridge = value;
+                    await this.plugin.saveSettings();
+                    this.display(); // Refresh to show/hide bridge info
+                }));
+
+        if (this.plugin.settings.enableInitiativeBridge) {
+            const bridgeInfo = containerEl.createDiv({ attr: { style: 'padding: 8px 12px; background: var(--background-modifier-border); border-radius: 6px; margin-bottom: 12px;' } });
+            const status = this.plugin.bridgeManager?.isConnected ? '🟢 Connected' : '⚪ Not Connected';
+            bridgeInfo.createEl('p', { text: `Bridge Status: ${status}`, attr: { style: 'margin: 0; font-weight: bold;' } });
+            bridgeInfo.createEl('p', { text: 'Use the command palette (Ctrl/Cmd + P) → "Share Initiative to Webapp" to connect.', attr: { style: 'margin: 4px 0 0 0; opacity: 0.7; font-size: 0.9em;' } });
+        }
+
         // Command Reference
         containerEl.createEl('h3', { text: 'Available Commands', attr: { style: 'margin-top: 30px;' } });
 
@@ -766,6 +845,16 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
         const cmd3 = cmdList.createEl('li');
         cmd3.createEl('strong', { text: 'Send Selection to Initiative: ' });
         cmd3.createSpan({ text: 'Parses selected text for monsters/NPCs and sends them to the Wildshape Tracker (Active or New).' });
+
+        if (this.plugin.settings.enableInitiativeBridge) {
+            const cmd4 = cmdList.createEl('li');
+            cmd4.createEl('strong', { text: 'Share Initiative to Webapp: ' });
+            cmd4.createSpan({ text: 'Syncs your Obsidian Initiative Tracker with the webapp for real-time bidirectional combat tracking.' });
+
+            const cmd5 = cmdList.createEl('li');
+            cmd5.createEl('strong', { text: 'Disconnect Initiative Bridge: ' });
+            cmd5.createSpan({ text: 'Stops the real-time sync between Obsidian and the webapp.' });
+        }
     }
 }
 // ...
