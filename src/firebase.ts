@@ -12,12 +12,12 @@ import { requestUrl } from 'obsidian';
 
 // Firebase config — same project as the webapp. These are public client-side keys.
 const FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyCLaGp-SKOqyfmGCPmDfpAiCpMJ4ULs5Xs',
+    apiKey: 'AIzaSyD31w6-r7yhSBzFyo-Fn9k5u_SBwcVov1M',
     authDomain: 'wildshape-tracker.firebaseapp.com',
     projectId: 'wildshape-tracker',
     storageBucket: 'wildshape-tracker.firebasestorage.app',
-    messagingSenderId: '755528324780',
-    appId: '1:755528324780:web:f3d4ee32ecca5effc1defc'
+    messagingSenderId: '240849046332',
+    appId: '1:240849046332:web:4d00d5c5a389dfc1c4ec39'
 };
 
 const CLOUD_FUNCTION_REGION = 'europe-west1';
