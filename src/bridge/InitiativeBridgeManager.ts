@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v3 - 25-02-2026 - PC HP/AC sync, initiative IT→Firestore, killCreature for death
+// v4 - 25-02-2026 - ID-based matching, PC HP/AC listeners, getName() for display names
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -15,20 +15,24 @@ import { getDb, isAuthenticated } from '../firebase';
 const ECHO_SUPPRESSION_MS = 2000;
 
 /**
+ * Helper: get the "full display name" from an IT Creature object.
+ * IT creatures with the same base name get numbered: "Goblin 1", "Goblin 2", etc.
+ * The number is on the live Creature object, NOT in toJSON()/CreatureState.
+ */
+function getCreatureDisplayName(creature: any): string {
+    if (creature.getName) {
+        return creature.getName(); // Returns "Goblin 1", "Goblin 2" etc.
+    }
+    // Fallback for CreatureState (no getName)
+    return creature.display || creature.name;
+}
+
+/**
  * Core orchestrator for bidirectional sync between the IT plugin and Firestore.
  *
- * Firestore → Obsidian:
- *   - Turn advance (via turn index change)
- *   - New combatants (summons added by webapp)
- *   - Initiative value changes
- *   - Combatant removal / death
- *
- * Obsidian → Firestore:
- *   - New monsters (hidden from players)
- *   - HP changes (including HP=0 → graveyard)
- *   - Turn advance
- *   - Enemy reveal (on their turn)
- *   - Monster removal
+ * Matching strategy: Each Firestore combatant stores `obsidianId` which maps to
+ * the IT creature's `id` field. This provides stable matching even when multiple
+ * creatures share the same base name (e.g. "Goblin 1", "Goblin 2").
  */
 export class InitiativeBridgeManager {
     private app: App;
@@ -39,6 +43,7 @@ export class InitiativeBridgeManager {
     private caravanId: string | null = null;
     private trackerId: string | null = null;
     private firestoreUnsubscribe: Unsubscribe | null = null;
+    private characterUnsubscribes: Unsubscribe[] = [];
     private itEventRefs: any[] = [];
 
     // Echo loop prevention
@@ -47,8 +52,12 @@ export class InitiativeBridgeManager {
 
     // Last known state for diffing
     private lastFirestoreState: any = null;
-    private lastITState: ITViewState | null = null;
-    private lastITCreatureNames: Set<string> = new Set();
+    private lastITCreatureIds: Set<string> = new Set();
+    // Map from IT creature.id → last known state
+    private lastITCreatureMap: Map<string, { name: string; hp: number; initiative: number; hidden: boolean; active: boolean }> = new Map();
+
+    // PC character data cache (from Firestore character docs)
+    private pcCharacterData: Map<string, any> = new Map();
 
     get isConnected(): boolean {
         return this._isConnected;
@@ -63,9 +72,6 @@ export class InitiativeBridgeManager {
     // CONNECTION LIFECYCLE
     // ==========================================
 
-    /**
-     * Fetch active trackers for carrier selection UI.
-     */
     async fetchActiveTrackers(caravanId: string): Promise<any[]> {
         const db = getDb();
         if (!db) throw new Error('Firestore not initialized');
@@ -82,22 +88,24 @@ export class InitiativeBridgeManager {
     }
 
     /**
-     * Create a new tracker in Firestore and return its ID.
+     * Create a new tracker in Firestore from the current IT encounter.
      */
     async createNewTracker(caravanId: string, name: string): Promise<string> {
         const db = getDb();
         if (!db) throw new Error('Firestore not initialized');
 
-        // Build combatant list from current IT state
+        // Get live Creature objects for proper display names
         const itCreatures = this.itAccess.getOrderedCreatures();
         const combatants: WebappCombatant[] = itCreatures.map((c: any) => {
             const state = c.toJSON ? c.toJSON() as ITCreatureState : c;
+            const displayName = getCreatureDisplayName(c);
             const combatant = itCreatureToWebappCombatant(state);
-            combatant.id = `obs_${state.id || state.name.replace(/\s/g, '_')}_${Date.now()}`;
+            combatant.name = displayName; // Use full name with number
+            combatant.id = `obs_${state.id}_${Date.now()}`;
+            combatant.obsidianId = state.id; // Store IT creature ID for matching
             return combatant;
         });
 
-        // Create the tracker document
         const trackerRef = doc(collection(db, 'caravans', caravanId, 'initiativeTrackers'));
 
         await setDoc(trackerRef, {
@@ -113,7 +121,7 @@ export class InitiativeBridgeManager {
     }
 
     /**
-     * Merge the current IT encounter into an existing webapp tracker.
+     * Merge IT encounter into an existing webapp tracker.
      */
     async mergeWithExistingTracker(caravanId: string, trackerId: string): Promise<void> {
         const db = getDb();
@@ -125,19 +133,26 @@ export class InitiativeBridgeManager {
 
         const existingData = snap.data();
         const existingCombatants: WebappCombatant[] = existingData.combatants || [];
-        const existingNames = new Set(existingCombatants.map(c => c.name));
+        const existingObsidianIds = new Set(existingCombatants
+            .filter(c => c.obsidianId)
+            .map(c => c.obsidianId));
 
-        // Get IT creatures and add any that don't already exist
+        // Get live Creature objects for proper display names
         const itCreatures = this.itAccess.getOrderedCreatures();
         const newCombatants: WebappCombatant[] = [];
 
         for (const c of itCreatures) {
             const state = c.toJSON ? c.toJSON() as ITCreatureState : c;
-            if (state.player) continue; // Don't re-add players that are already in webapp
-            if (existingNames.has(state.display || state.name)) continue;
+            // Skip if IT creature already mapped to a Firestore combatant
+            if (existingObsidianIds.has(state.id)) continue;
+            // Skip players — they should already exist in the webapp
+            if (state.player) continue;
 
+            const displayName = getCreatureDisplayName(c);
             const combatant = itCreatureToWebappCombatant(state);
-            combatant.id = `obs_${state.id || state.name.replace(/\s/g, '_')}_${Date.now()}`;
+            combatant.name = displayName;
+            combatant.id = `obs_${state.id}_${Date.now()}`;
+            combatant.obsidianId = state.id;
             newCombatants.push(combatant);
         }
 
@@ -161,13 +176,10 @@ export class InitiativeBridgeManager {
         this.trackerId = trackerId;
         this._isConnected = true;
 
-        // Store initial IT state
-        const itCreatures = this.itAccess.getOrderedCreatures();
-        this.lastITCreatureNames = new Set(
-            itCreatures.map((c: any) => c.getName?.() || c.name)
-        );
+        // Store initial IT creature state
+        this.snapshotITState();
 
-        // 1. Start Firestore listener
+        // 1. Start Firestore tracker listener
         this.startFirestoreListener();
 
         // 2. Start IT plugin event listeners
@@ -177,16 +189,42 @@ export class InitiativeBridgeManager {
     }
 
     /**
+     * Capture the current IT state for diff tracking.
+     */
+    private snapshotITState(): void {
+        const itCreatures = this.itAccess.getOrderedCreatures();
+        this.lastITCreatureIds.clear();
+        this.lastITCreatureMap.clear();
+
+        for (const c of itCreatures) {
+            const id = c.id;
+            const name = getCreatureDisplayName(c);
+            this.lastITCreatureIds.add(id);
+            this.lastITCreatureMap.set(id, {
+                name,
+                hp: c.hp ?? 0,
+                initiative: c.initiative ?? 0,
+                hidden: c.hidden ?? false,
+                active: c.active ?? false,
+            });
+        }
+    }
+
+    /**
      * Stop the sync and clean up.
      */
     async disconnect(): Promise<void> {
-        // Unsubscribe Firestore listener
         if (this.firestoreUnsubscribe) {
             this.firestoreUnsubscribe();
             this.firestoreUnsubscribe = null;
         }
 
-        // Unregister IT event listeners
+        // Unsubscribe character listeners
+        for (const unsub of this.characterUnsubscribes) {
+            unsub();
+        }
+        this.characterUnsubscribes = [];
+
         for (const ref of this.itEventRefs) {
             this.app.workspace.offref(ref);
         }
@@ -196,8 +234,9 @@ export class InitiativeBridgeManager {
         this.caravanId = null;
         this.trackerId = null;
         this.lastFirestoreState = null;
-        this.lastITState = null;
-        this.lastITCreatureNames.clear();
+        this.lastITCreatureIds.clear();
+        this.lastITCreatureMap.clear();
+        this.pcCharacterData.clear();
 
         new Notice('🔴 Initiative Bridge disconnected');
         console.log('[Bridge] Disconnected');
@@ -223,15 +262,104 @@ export class InitiativeBridgeManager {
             const data = snapshot.data();
             if (!data) return;
 
-            // Skip if we just pushed changes (echo prevention)
             if (Date.now() < this.suppressFirestoreUntil) {
                 this.lastFirestoreState = data;
+                // Still set up character listeners on first load
+                if (!this.lastFirestoreState || this.characterUnsubscribes.length === 0) {
+                    this.setupCharacterListeners(data.combatants || []);
+                }
                 return;
             }
 
             this.handleFirestoreChange(data);
             this.lastFirestoreState = data;
         });
+    }
+
+    /**
+     * Set up listeners for PC character documents to get live HP/AC from D&D Beyond.
+     */
+    private setupCharacterListeners(combatants: WebappCombatant[]): void {
+        const db = getDb();
+        if (!db) return;
+
+        // Clean up old listeners
+        for (const unsub of this.characterUnsubscribes) {
+            unsub();
+        }
+        this.characterUnsubscribes = [];
+
+        // Find unique PC IDs
+        const pcIds = new Set<string>();
+        for (const combatant of combatants) {
+            const pcId = combatant.pcId || (combatant as any).ownerId;
+            if (pcId && (combatant.type === 'Player Character' || (combatant as any).isPlayerSummon)) {
+                pcIds.add(pcId);
+            }
+        }
+
+        // Listen to each character document
+        for (const pcId of pcIds) {
+            const charRef = doc(db, 'characters', pcId);
+            const unsub = onSnapshot(charRef, (snap) => {
+                if (snap.exists()) {
+                    const charData = { id: snap.id, ...snap.data() };
+                    const prevData = this.pcCharacterData.get(pcId);
+                    this.pcCharacterData.set(pcId, charData);
+
+                    // Push HP/AC changes to Obsidian
+                    if (this._isConnected && prevData) {
+                        this.handleCharacterDataChange(pcId, charData, prevData);
+                    } else if (this._isConnected) {
+                        // First load — sync initial HP/AC
+                        this.handleCharacterDataChange(pcId, charData, null);
+                    }
+                }
+            });
+            this.characterUnsubscribes.push(unsub);
+        }
+
+        console.log(`[Bridge] Listening to ${pcIds.size} character docs for HP/AC sync`);
+    }
+
+    /**
+     * When a character document changes (HP/AC from D&D Beyond), push to Obsidian.
+     */
+    private handleCharacterDataChange(pcId: string, charData: any, prevData: any): void {
+        if (Date.now() < this.suppressITUntil) return;
+
+        const combatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
+
+        // Find all combatants that reference this character
+        for (const combatant of combatants) {
+            const refId = combatant.pcId || (combatant as any).ownerId;
+            if (refId !== pcId) continue;
+
+            const name = combatant.name;
+
+            // HP changed
+            const currentHP = charData.currentHP ?? charData.hp;
+            const prevHP = prevData ? (prevData.currentHP ?? prevData.hp) : undefined;
+            if (currentHP !== undefined && currentHP !== prevHP) {
+                this.itAccess.setCreatureHP(name, currentHP);
+                console.log(`[Bridge] PC HP sync: "${name}" → ${currentHP}`);
+            }
+
+            // Max HP changed
+            const maxHP = charData.maxHP ?? charData.maxHp;
+            const prevMaxHP = prevData ? (prevData.maxHP ?? prevData.maxHp) : undefined;
+            if (maxHP !== undefined && maxHP !== prevMaxHP) {
+                this.itAccess.setCreatureMaxHP(name, maxHP);
+            }
+
+            // AC changed
+            const ac = charData.armorClass ?? charData.ac;
+            const prevAC = prevData ? (prevData.armorClass ?? prevData.ac) : undefined;
+            if (ac !== undefined && ac !== prevAC) {
+                this.itAccess.setCreatureAC(name, ac);
+                console.log(`[Bridge] PC AC sync: "${name}" → ${ac}`);
+            }
+        }
     }
 
     private handleFirestoreChange(data: any): void {
@@ -241,86 +369,102 @@ export class InitiativeBridgeManager {
         const combatants: WebappCombatant[] = data.combatants || [];
         const prevCombatants: WebappCombatant[] = prevData?.combatants || [];
 
-        // Build lookup maps
-        const prevMap = new Map(prevCombatants.map(c => [c.name, c]));
-        const newMap = new Map(combatants.map(c => [c.name, c]));
+        // Set up character listeners if needed
+        if (this.characterUnsubscribes.length === 0) {
+            this.setupCharacterListeners(combatants);
+        }
+
+        // Build lookup maps — by obsidianId if available, else by name
+        const prevByObsId = new Map<string, WebappCombatant>();
+        const prevByName = new Map<string, WebappCombatant>();
+        for (const c of prevCombatants) {
+            if (c.obsidianId) prevByObsId.set(c.obsidianId, c);
+            prevByName.set(c.name, c);
+        }
+
+        const newByObsId = new Map<string, WebappCombatant>();
+        const newByName = new Map<string, WebappCombatant>();
+        for (const c of combatants) {
+            if (c.obsidianId) newByObsId.set(c.obsidianId, c);
+            newByName.set(c.name, c);
+        }
 
         // --- Detect turn change ---
         if (prevData && data.turn !== prevData.turn) {
             this.handleFirestoreTurnChange(data, combatants);
         }
 
-        // --- Detect new combatants (summons/PCs added from webapp) ---
-        for (const [name, combatant] of newMap) {
-            if (!prevMap.has(name)) {
-                this.handleNewCombatantFromFirestore(combatant);
+        // --- Detect new combatants (added from webapp) ---
+        for (const c of combatants) {
+            const isNew = c.obsidianId
+                ? !prevByObsId.has(c.obsidianId)
+                : !prevByName.has(c.name);
+
+            if (isNew && prevData) {
+                this.handleNewCombatantFromFirestore(c);
             }
         }
 
         // --- Detect removed combatants ---
-        for (const [name, combatant] of prevMap) {
-            if (!newMap.has(name)) {
-                this.handleRemovedCombatantFromFirestore(name);
+        for (const c of prevCombatants) {
+            const isRemoved = c.obsidianId
+                ? !newByObsId.has(c.obsidianId)
+                : !newByName.has(c.name);
+
+            if (isRemoved) {
+                this.handleRemovedCombatantFromFirestore(c);
             }
         }
 
         // --- Detect initiative changes (webapp → IT) ---
-        for (const [name, combatant] of newMap) {
-            const prev = prevMap.get(name);
-            if (prev && prev.initiative !== combatant.initiative && combatant.initiative !== null) {
+        for (const c of combatants) {
+            const prev = c.obsidianId
+                ? prevByObsId.get(c.obsidianId)
+                : prevByName.get(c.name);
+
+            if (prev && prev.initiative !== c.initiative && c.initiative !== null) {
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.setCreatureInitiative(name, combatant.initiative);
+                // Find the right name in IT (might be numbered)
+                const itName = this.findITCreatureName(c);
+                if (itName) {
+                    this.itAccess.setCreatureInitiative(itName, c.initiative);
+                }
             }
         }
 
         // --- Detect death changes (webapp → Obsidian) ---
-        for (const [name, combatant] of newMap) {
-            const prev = prevMap.get(name);
-            if (prev && !prev.isDead && combatant.isDead) {
-                // Combatant was killed in webapp → kill in IT (HP=0 + Unconscious)
+        for (const c of combatants) {
+            const prev = c.obsidianId
+                ? prevByObsId.get(c.obsidianId)
+                : prevByName.get(c.name);
+
+            if (prev && !prev.isDead && c.isDead) {
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.killCreature(name);
-                console.log(`[Bridge] Death synced to IT: "${name}"`);
-            }
-        }
-
-        // --- Sync PC HP/AC from Firestore → Obsidian ---
-        // The webapp has live D&D Beyond data for PCs; sync this TO Obsidian so DM can see stats
-        for (const [name, combatant] of newMap) {
-            const prev = prevMap.get(name);
-            if (combatant.type !== 'Player Character' && combatant.type !== 'Summon') continue;
-
-            // HP sync: sync if changed or on first load
-            if (combatant.hp !== undefined && combatant.hp !== null) {
-                if (!prev || prev.hp !== combatant.hp) {
-                    this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                    this.itAccess.setCreatureHP(name, combatant.hp);
-                }
-            }
-
-            // Max HP sync
-            if (combatant.maxHp !== undefined && combatant.maxHp !== null) {
-                if (!prev || prev.maxHp !== combatant.maxHp) {
-                    this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                    this.itAccess.setCreatureMaxHP(name, combatant.maxHp);
-                }
-            }
-
-            // AC sync
-            if (combatant.ac !== undefined && combatant.ac !== null) {
-                if (!prev || prev.ac !== combatant.ac) {
-                    this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                    this.itAccess.setCreatureAC(name, combatant.ac);
+                const itName = this.findITCreatureName(c);
+                if (itName) {
+                    this.itAccess.killCreature(itName);
+                    console.log(`[Bridge] Death synced to IT: "${itName}"`);
                 }
             }
         }
     }
 
+    /**
+     * Find the IT creature name (with number suffix) that matches a Firestore combatant.
+     */
+    private findITCreatureName(combatant: WebappCombatant): string | null {
+        if (combatant.obsidianId) {
+            const creatures = this.itAccess.getOrderedCreatures();
+            const match = creatures.find((c: any) => c.id === combatant.obsidianId);
+            if (match) return getCreatureDisplayName(match);
+        }
+        // Fallback: match by name
+        return combatant.name;
+    }
+
     private handleFirestoreTurnChange(data: any, combatants: WebappCombatant[]): void {
         const turnIndex = data.turn ?? 0;
 
-        // Find which combatant should be active based on turn index
-        // Sort combatants the same way the webapp does (by initiative desc, then tieBreaker)
         const sorted = [...combatants]
             .filter(c => !c.isDead)
             .sort((a, b) => {
@@ -329,32 +473,38 @@ export class InitiativeBridgeManager {
                 return (b.tieBreaker || 0) - (a.tieBreaker || 0);
             });
 
-        const totalActive = sorted.length;
-        if (totalActive === 0) return;
+        if (sorted.length === 0) return;
 
-        const activeIndex = turnIndex % totalActive;
+        const activeIndex = turnIndex % sorted.length;
         const targetCombatant = sorted[activeIndex];
 
         if (targetCombatant) {
-            console.log(`[Bridge] Firestore turn → "${targetCombatant.name}" (index ${activeIndex})`);
-            this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-            this.itAccess.setActiveTurn(targetCombatant.name);
+            const itName = this.findITCreatureName(targetCombatant);
+            if (itName) {
+                console.log(`[Bridge] Firestore turn → "${itName}" (index ${activeIndex})`);
+                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+                this.itAccess.setActiveTurn(itName);
+            }
         }
     }
 
     private handleNewCombatantFromFirestore(combatant: WebappCombatant): void {
         // Don't re-add if IT already has this creature
+        if (combatant.obsidianId) {
+            const creatures = this.itAccess.getOrderedCreatures();
+            if (creatures.some((c: any) => c.id === combatant.obsidianId)) return;
+        }
+
+        // Check by name too
         const existing = this.itAccess.getOrderedCreatures();
         const alreadyExists = existing.some((c: any) =>
-            (c.getName?.() || c.name) === combatant.name
+            getCreatureDisplayName(c) === combatant.name
         );
         if (alreadyExists) return;
 
         console.log(`[Bridge] New combatant from Firestore: "${combatant.name}"`);
 
-        // Convert to IT creature format and add
         const itCreature = webappCombatantToITCreature(combatant);
-
         this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
         this.itAccess.addCreaturesWithInitiative([{
             creature: itCreature,
@@ -362,10 +512,13 @@ export class InitiativeBridgeManager {
         }]);
     }
 
-    private handleRemovedCombatantFromFirestore(name: string): void {
-        console.log(`[Bridge] Combatant removed from Firestore: "${name}"`);
-        this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-        this.itAccess.removeCreatureByName(name);
+    private handleRemovedCombatantFromFirestore(combatant: WebappCombatant): void {
+        const itName = this.findITCreatureName(combatant);
+        if (itName) {
+            console.log(`[Bridge] Combatant removed from Firestore: "${itName}"`);
+            this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+            this.itAccess.removeCreatureByName(itName);
+        }
     }
 
     // ==========================================
@@ -373,24 +526,23 @@ export class InitiativeBridgeManager {
     // ==========================================
 
     private startITListeners(): void {
-        // Listen to save-state events (fires on every IT change)
         const saveRef = (this.app.workspace as any).on(
             'initiative-tracker:save-state',
             (state: ITViewState) => {
                 if (!this._isConnected) return;
                 if (Date.now() < this.suppressITUntil) {
-                    this.lastITState = state;
+                    // Still update our tracked state
+                    this.snapshotITState();
                     return;
                 }
-                this.handleITStateChange(state);
-                this.lastITState = state;
+                this.handleITStateChange();
             }
         );
         this.itEventRefs.push(saveRef);
 
-        // Listen for encounter stop → disconnect
-        const stopRef = this.app.workspace.on(
-            'initiative-tracker:stop-viewing' as any,
+        // Auto-disconnect on tracker close
+        const stopRef = (this.app.workspace as any).on(
+            'initiative-tracker:stop-viewing',
             () => {
                 if (this._isConnected) {
                     new Notice('Initiative Tracker closed — bridge disconnecting');
@@ -400,9 +552,9 @@ export class InitiativeBridgeManager {
         );
         this.itEventRefs.push(stopRef);
 
-        // Listen for new encounter → disconnect old bridge
-        const newEncounterRef = this.app.workspace.on(
-            'initiative-tracker:start-encounter' as any,
+        // Auto-disconnect on new encounter
+        const newEncounterRef = (this.app.workspace as any).on(
+            'initiative-tracker:start-encounter',
             () => {
                 if (this._isConnected) {
                     new Notice('New encounter started — bridge disconnecting');
@@ -413,39 +565,56 @@ export class InitiativeBridgeManager {
         this.itEventRefs.push(newEncounterRef);
     }
 
-    private async handleITStateChange(state: ITViewState): Promise<void> {
+    /**
+     * Handle IT state change by diffing live Creature objects against our last snapshot.
+     * Uses getOrderedCreatures() for proper display names and creature IDs.
+     */
+    private async handleITStateChange(): Promise<void> {
         if (!this.caravanId || !this.trackerId) return;
 
         const db = getDb();
         if (!db) return;
 
         const trackerRef = doc(db, 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId);
-        const prevState = this.lastITState;
-        const creatures = state.creatures || [];
-        const prevCreatures = prevState?.creatures || [];
 
-        const newNames = new Set(creatures.map(c => c.display || c.name));
-        const prevNames = new Set(prevCreatures.map(c => c.display || c.name));
+        // Get live Creature objects from the IT plugin
+        const liveCreatures = this.itAccess.getOrderedCreatures();
 
-        // We'll build a partial update to Firestore
+        // Current Firestore combatants
+        const currentFirestoreCombatants: WebappCombatant[] =
+            this.lastFirestoreState?.combatants || [];
+        const firestoreByObsId = new Map(
+            currentFirestoreCombatants
+                .filter(c => c.obsidianId)
+                .map(c => [c.obsidianId!, c])
+        );
+        const firestoreByName = new Map(
+            currentFirestoreCombatants.map(c => [c.name, c])
+        );
+
         const firestoreUpdate: any = { updatedAt: serverTimestamp() };
         let needsFullCombatantUpdate = false;
 
-        // Get the current Firestore combatants
-        const currentFirestoreCombatants: WebappCombatant[] =
-            this.lastFirestoreState?.combatants || [];
-        const firestoreMap = new Map(currentFirestoreCombatants.map(c => [c.name, c]));
+        // Build current ID set
+        const currentIds = new Set(liveCreatures.map((c: any) => c.id as string));
 
-        // --- Detect new monsters from IT ---
+        // --- Detect new creatures in IT ---
         const newMonsters: WebappCombatant[] = [];
-        for (const creature of creatures) {
-            const name = creature.display || creature.name;
-            if (!this.lastITCreatureNames.has(name) && !firestoreMap.has(name)) {
-                // New creature in IT that's not in Firestore
-                const combatant = itCreatureToWebappCombatant(creature);
-                combatant.id = `obs_${creature.id || name.replace(/\s/g, '_')}_${Date.now()}`;
-                newMonsters.push(combatant);
-                console.log(`[Bridge] New monster from IT: "${name}" (hidden: ${combatant.isHiddenFromPlayers})`);
+        for (const c of liveCreatures) {
+            const id = c.id as string;
+            const name = getCreatureDisplayName(c);
+
+            if (!this.lastITCreatureIds.has(id) && !firestoreByObsId.has(id)) {
+                // Also check by display name (in case it was added from webapp without obsidianId)
+                if (!firestoreByName.has(name)) {
+                    const state = c.toJSON ? c.toJSON() as ITCreatureState : c;
+                    const combatant = itCreatureToWebappCombatant(state);
+                    combatant.name = name; // Full name with number
+                    combatant.id = `obs_${id}_${Date.now()}`;
+                    combatant.obsidianId = id;
+                    newMonsters.push(combatant);
+                    console.log(`[Bridge] New monster from IT: "${name}" (hidden: ${combatant.isHiddenFromPlayers})`);
+                }
             }
         }
 
@@ -453,114 +622,101 @@ export class InitiativeBridgeManager {
             needsFullCombatantUpdate = true;
         }
 
-        // --- Detect removed creatures from IT ---
-        const removedNames: string[] = [];
-        for (const prevName of this.lastITCreatureNames) {
-            if (!newNames.has(prevName)) {
-                removedNames.push(prevName);
+        // --- Detect removed creatures ---
+        const removedIds: string[] = [];
+        for (const prevId of this.lastITCreatureIds) {
+            if (!currentIds.has(prevId)) {
+                removedIds.push(prevId);
+                const prevName = this.lastITCreatureMap.get(prevId)?.name;
                 console.log(`[Bridge] Creature removed from IT: "${prevName}"`);
             }
         }
 
-        if (removedNames.length > 0) {
+        if (removedIds.length > 0) {
             needsFullCombatantUpdate = true;
         }
 
-        // --- Detect turn change (active creature changed) ---
-        const activeCreature = creatures.find(c => c.active);
-        const prevActiveCreature = prevCreatures.find(c => c.active);
-
-        if (activeCreature && prevActiveCreature &&
-            (activeCreature.display || activeCreature.name) !== (prevActiveCreature.display || prevActiveCreature.name)) {
-            // Turn changed in IT → update Firestore turn index
-            const activeName = activeCreature.display || activeCreature.name;
-            const firestoreCombatants = needsFullCombatantUpdate
-                ? this.buildUpdatedCombatantList(currentFirestoreCombatants, newMonsters, removedNames, creatures)
-                : currentFirestoreCombatants;
-
-            // Find the new turn index
-            const activeSorted = firestoreCombatants
-                .filter(c => !c.isDead)
-                .sort((a, b) => {
-                    const initDiff = (b.initiative || 0) - (a.initiative || 0);
-                    if (initDiff !== 0) return initDiff;
-                    return (b.tieBreaker || 0) - (a.tieBreaker || 0);
-                });
-
-            const turnIndex = activeSorted.findIndex(c => c.name === activeName);
-            if (turnIndex >= 0) {
-                firestoreUpdate.turn = turnIndex;
-                console.log(`[Bridge] Turn change → "${activeName}" (index ${turnIndex})`);
-            }
-
-            // Update round if IT advanced
-            if (state.round !== prevState?.round) {
-                firestoreUpdate.round = state.round;
-            }
-        }
-
-        // --- Detect HP changes for monsters ---
-        for (const creature of creatures) {
-            const name = creature.display || creature.name;
-            const prev = prevCreatures.find(c => (c.display || c.name) === name);
+        // --- Detect changes per creature ---
+        for (const c of liveCreatures) {
+            const id = c.id as string;
+            const prev = this.lastITCreatureMap.get(id);
             if (!prev) continue;
 
-            // HP changed
-            if (creature.currentHP !== prev.currentHP) {
-                const firestoreCombatant = firestoreMap.get(name);
-                if (firestoreCombatant) {
-                    firestoreCombatant.hp = creature.currentHP;
-                    firestoreCombatant.isDead = creature.currentHP <= 0;
-                    if (creature.currentHP <= 0 && !firestoreCombatant.deathRound) {
-                        firestoreCombatant.deathRound = state.round;
-                    }
-                    needsFullCombatantUpdate = true;
-                    console.log(`[Bridge] HP change: "${name}" → ${creature.currentHP}`);
+            const name = getCreatureDisplayName(c);
+            const firestoreCombatant = firestoreByObsId.get(id) || firestoreByName.get(name);
+            if (!firestoreCombatant) continue;
+
+            // HP changed (monsters only — PC HP flows the other direction)
+            if (!c.player && c.hp !== prev.hp) {
+                firestoreCombatant.hp = c.hp;
+                firestoreCombatant.isDead = c.hp <= 0;
+                if (c.hp <= 0 && !firestoreCombatant.deathRound) {
+                    firestoreCombatant.deathRound = this.lastFirestoreState?.round;
                 }
+                needsFullCombatantUpdate = true;
+                console.log(`[Bridge] HP change: "${name}" → ${c.hp}`);
             }
 
-            // Hidden flag changed (enemy reveal)
-            if (creature.hidden !== prev.hidden) {
-                const firestoreCombatant = firestoreMap.get(name);
-                if (firestoreCombatant) {
-                    firestoreCombatant.isHiddenFromPlayers = creature.hidden;
-                    needsFullCombatantUpdate = true;
-                }
+            // Hidden flag changed
+            if (c.hidden !== prev.hidden) {
+                firestoreCombatant.isHiddenFromPlayers = c.hidden;
+                needsFullCombatantUpdate = true;
             }
 
-            // Initiative changed (IT → Firestore)
-            if (creature.initiative !== prev.initiative) {
-                const firestoreCombatant = firestoreMap.get(name);
-                if (firestoreCombatant) {
-                    firestoreCombatant.initiative = creature.initiative;
-                    needsFullCombatantUpdate = true;
-                    console.log(`[Bridge] Initiative change: "${name}" → ${creature.initiative}`);
+            // Initiative changed
+            if (c.initiative !== prev.initiative) {
+                firestoreCombatant.initiative = c.initiative;
+                needsFullCombatantUpdate = true;
+                console.log(`[Bridge] Initiative change: "${name}" → ${c.initiative}`);
+            }
+
+            // Turn changed (active creature)
+            if (c.active && !prev.active) {
+                // This creature became active — find its turn index
+                const activeSorted = [...currentFirestoreCombatants]
+                    .filter(fc => !fc.isDead)
+                    .sort((a, b) => {
+                        const initDiff = (b.initiative || 0) - (a.initiative || 0);
+                        if (initDiff !== 0) return initDiff;
+                        return (b.tieBreaker || 0) - (a.tieBreaker || 0);
+                    });
+
+                const turnIndex = activeSorted.findIndex(fc =>
+                    fc.obsidianId === id || fc.name === name
+                );
+                if (turnIndex >= 0) {
+                    firestoreUpdate.turn = turnIndex;
+                    console.log(`[Bridge] Turn change → "${name}" (index ${turnIndex})`);
                 }
             }
         }
 
-        // --- Enemy auto-reveal on their turn ---
+        // --- Enemy auto-reveal on turn ---
+        const activeCreature = liveCreatures.find((c: any) => c.active);
         if (activeCreature && !activeCreature.player && activeCreature.hidden) {
-            const activeName = activeCreature.display || activeCreature.name;
-            const firestoreCombatant = firestoreMap.get(activeName);
-            if (firestoreCombatant?.isHiddenFromPlayers) {
-                firestoreCombatant.isHiddenFromPlayers = false;
+            const activeName = getCreatureDisplayName(activeCreature);
+            const fc = firestoreByObsId.get(activeCreature.id) || firestoreByName.get(activeName);
+            if (fc?.isHiddenFromPlayers) {
+                fc.isHiddenFromPlayers = false;
                 needsFullCombatantUpdate = true;
-                // Also reveal in IT
                 this.itAccess.setCreatureHidden(activeName, false);
                 console.log(`[Bridge] Auto-reveal: "${activeName}"`);
             }
         }
 
-        // --- Build final combatant array if needed ---
+        // --- Build final combatant array ---
         if (needsFullCombatantUpdate) {
-            firestoreUpdate.combatants = this.buildUpdatedCombatantList(
-                currentFirestoreCombatants, newMonsters, removedNames, creatures
+            // Remove deleted creatures
+            let result = currentFirestoreCombatants.filter(c =>
+                !removedIds.includes(c.obsidianId || '')
             );
+            // Add new monsters
+            result = [...result, ...newMonsters];
+            firestoreUpdate.combatants = result;
         }
 
         // --- Write to Firestore ---
-        if (Object.keys(firestoreUpdate).length > 1) { // More than just updatedAt
+        if (Object.keys(firestoreUpdate).length > 1) {
             this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
             try {
                 await updateDoc(trackerRef, firestoreUpdate);
@@ -569,38 +725,7 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // Update tracked names
-        this.lastITCreatureNames = newNames;
-    }
-
-    /**
-     * Build the updated combatant array for Firestore.
-     */
-    private buildUpdatedCombatantList(
-        existing: WebappCombatant[],
-        toAdd: WebappCombatant[],
-        toRemoveNames: string[],
-        itCreatures: ITCreatureState[]
-    ): WebappCombatant[] {
-        // Start with existing, remove deleted ones
-        let result = existing.filter(c => !toRemoveNames.includes(c.name));
-
-        // Update existing combatants with IT data
-        for (const combatant of result) {
-            const itCreature = itCreatures.find(c =>
-                (c.display || c.name) === combatant.name
-            );
-            if (itCreature && combatant.type !== 'Player Character') {
-                // Sync monster HP from IT
-                combatant.hp = itCreature.currentHP;
-                combatant.maxHp = itCreature.currentMaxHP ?? itCreature.hp;
-                combatant.isDead = itCreature.currentHP <= 0;
-            }
-        }
-
-        // Add new monsters
-        result = [...result, ...toAdd];
-
-        return result;
+        // Update tracked state
+        this.snapshotITState();
     }
 }

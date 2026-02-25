@@ -26,6 +26,7 @@ export interface WebappCombatant {
     tieBreaker?: number;
     initiative_modifier?: number;
     hasAdvantage?: boolean;
+    obsidianId?: string;       // IT creature ID for bridge matching
 }
 
 /**
