@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v4 - 25-02-2026 - ID-based matching, PC HP/AC listeners, getName() for display names
+// v5 - 25-02-2026 - Fix first-load PCs, disconnect guard, save-state encounter wipe guard
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -49,6 +49,7 @@ export class InitiativeBridgeManager {
     // Echo loop prevention
     private suppressFirestoreUntil: number = 0;
     private suppressITUntil: number = 0;
+    private isDisconnecting: boolean = false;
 
     // Last known state for diffing
     private lastFirestoreState: any = null;
@@ -214,6 +215,10 @@ export class InitiativeBridgeManager {
      * Stop the sync and clean up.
      */
     async disconnect(): Promise<void> {
+        // Set flag FIRST to prevent save-state from processing
+        this._isConnected = false;
+        this.isDisconnecting = true;
+
         if (this.firestoreUnsubscribe) {
             this.firestoreUnsubscribe();
             this.firestoreUnsubscribe = null;
@@ -230,7 +235,7 @@ export class InitiativeBridgeManager {
         }
         this.itEventRefs = [];
 
-        this._isConnected = false;
+        this.isDisconnecting = false;
         this.caravanId = null;
         this.trackerId = null;
         this.lastFirestoreState = null;
@@ -394,13 +399,14 @@ export class InitiativeBridgeManager {
             this.handleFirestoreTurnChange(data, combatants);
         }
 
-        // --- Detect new combatants (added from webapp) ---
+        // --- Detect new combatants (added from webapp, or first load) ---
         for (const c of combatants) {
             const isNew = c.obsidianId
                 ? !prevByObsId.has(c.obsidianId)
                 : !prevByName.has(c.name);
 
-            if (isNew && prevData) {
+            // On first load (no prevData), add combatants that don't exist in IT yet
+            if (isNew) {
                 this.handleNewCombatantFromFirestore(c);
             }
         }
@@ -529,9 +535,23 @@ export class InitiativeBridgeManager {
         const saveRef = (this.app.workspace as any).on(
             'initiative-tracker:save-state',
             (state: ITViewState) => {
-                if (!this._isConnected) return;
+                if (!this._isConnected || this.isDisconnecting) return;
+
+                // Guard: If most tracked creatures vanished, this is likely a new encounter.
+                // Don't sync this to Firestore — let the start-encounter event handle disconnect.
+                const liveCreatures = this.itAccess.getOrderedCreatures();
+                const liveIds = new Set(liveCreatures.map((c: any) => c.id as string));
+                let matchCount = 0;
+                for (const id of this.lastITCreatureIds) {
+                    if (liveIds.has(id)) matchCount++;
+                }
+                // If we had tracked creatures and now 0 match, a new encounter started
+                if (this.lastITCreatureIds.size > 0 && matchCount === 0) {
+                    console.log('[Bridge] All tracked creatures gone — likely new encounter, skipping sync');
+                    return;
+                }
+
                 if (Date.now() < this.suppressITUntil) {
-                    // Still update our tracked state
                     this.snapshotITState();
                     return;
                 }
