@@ -1,7 +1,7 @@
 {
 	"id": "highway-dnd-tools",
 	"name": "Highway DnD Tools",
-	"version": "0.3.3",
+	"version": "0.3.4",
 	"minAppVersion": "0.15.0",
 	"description": "Integrates your Highway DnD Tools caravan directly into Obsidian for seamless session prep and management..",
 	"author": "Highway1027",

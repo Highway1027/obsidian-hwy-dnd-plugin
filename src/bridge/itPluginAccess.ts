@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v2 - 25-02-2026 - Complete rewrite using real IT plugin internals from source analysis
+// v3 - 25-02-2026 - Fixed HP setter, added AC setter, added kill method with Unconscious
 
 import { App, Notice } from 'obsidian';
 
@@ -207,7 +207,7 @@ export class ITPluginAccess {
 
     /**
      * Update a creature's HP by directly setting it.
-     * Uses the `set_hp` field which bypasses the damage/healing flow.
+     * updateCreatureByName uses {hp: val} for direct set.
      */
     setCreatureHP(name: string, hp: number): boolean {
         const store = this.getTrackerStore();
@@ -215,7 +215,28 @@ export class ITPluginAccess {
             console.warn('[ITPluginAccess] updateCreatureByName not available');
             return false;
         }
-        store.updateCreatureByName(name, { set_hp: hp });
+        store.updateCreatureByName(name, { hp });
+        return true;
+    }
+
+    /**
+     * Kill a creature: set HP to 0 and add Unconscious status.
+     */
+    killCreature(name: string): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) return false;
+        // Set HP to 0 and add Unconscious status
+        store.updateCreatureByName(name, { hp: 0, status: ['Unconscious'] });
+        return true;
+    }
+
+    /**
+     * Set a creature's AC value.
+     */
+    setCreatureAC(name: string, ac: number | string): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) return false;
+        store.updateCreatureByName(name, { ac });
         return true;
     }
 

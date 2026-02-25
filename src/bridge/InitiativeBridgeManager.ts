@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v2 - 25-02-2026 - Complete rewrite with correct IT plugin API and all 9 issue fixes
+// v3 - 25-02-2026 - PC HP/AC sync, initiative IT→Firestore, killCreature for death
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -264,7 +264,7 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // --- Detect initiative changes ---
+        // --- Detect initiative changes (webapp → IT) ---
         for (const [name, combatant] of newMap) {
             const prev = prevMap.get(name);
             if (prev && prev.initiative !== combatant.initiative && combatant.initiative !== null) {
@@ -277,9 +277,41 @@ export class InitiativeBridgeManager {
         for (const [name, combatant] of newMap) {
             const prev = prevMap.get(name);
             if (prev && !prev.isDead && combatant.isDead) {
-                // Combatant was killed in webapp → set HP to 0 in IT (triggers auto-unconscious)
+                // Combatant was killed in webapp → kill in IT (HP=0 + Unconscious)
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.setCreatureHP(name, 0);
+                this.itAccess.killCreature(name);
+                console.log(`[Bridge] Death synced to IT: "${name}"`);
+            }
+        }
+
+        // --- Sync PC HP/AC from Firestore → Obsidian ---
+        // The webapp has live D&D Beyond data for PCs; sync this TO Obsidian so DM can see stats
+        for (const [name, combatant] of newMap) {
+            const prev = prevMap.get(name);
+            if (combatant.type !== 'Player Character' && combatant.type !== 'Summon') continue;
+
+            // HP sync: sync if changed or on first load
+            if (combatant.hp !== undefined && combatant.hp !== null) {
+                if (!prev || prev.hp !== combatant.hp) {
+                    this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+                    this.itAccess.setCreatureHP(name, combatant.hp);
+                }
+            }
+
+            // Max HP sync
+            if (combatant.maxHp !== undefined && combatant.maxHp !== null) {
+                if (!prev || prev.maxHp !== combatant.maxHp) {
+                    this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+                    this.itAccess.setCreatureMaxHP(name, combatant.maxHp);
+                }
+            }
+
+            // AC sync
+            if (combatant.ac !== undefined && combatant.ac !== null) {
+                if (!prev || prev.ac !== combatant.ac) {
+                    this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+                    this.itAccess.setCreatureAC(name, combatant.ac);
+                }
             }
         }
     }
@@ -493,6 +525,16 @@ export class InitiativeBridgeManager {
                 if (firestoreCombatant) {
                     firestoreCombatant.isHiddenFromPlayers = creature.hidden;
                     needsFullCombatantUpdate = true;
+                }
+            }
+
+            // Initiative changed (IT → Firestore)
+            if (creature.initiative !== prev.initiative) {
+                const firestoreCombatant = firestoreMap.get(name);
+                if (firestoreCombatant) {
+                    firestoreCombatant.initiative = creature.initiative;
+                    needsFullCombatantUpdate = true;
+                    console.log(`[Bridge] Initiative change: "${name}" → ${creature.initiative}`);
                 }
             }
         }
