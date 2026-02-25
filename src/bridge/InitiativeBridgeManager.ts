@@ -275,9 +275,12 @@ export class InitiativeBridgeManager {
                 }
                 return;
             }
-
-            this.handleFirestoreChange(data);
+            // CRITICAL: Set lastFirestoreState BEFORE processing so that
+            // assignObsidianId() and handleCharacterDataChange() can read current data
+            const prevState = this.lastFirestoreState;
             this.lastFirestoreState = data;
+
+            this.handleFirestoreChange(data, prevState);
         });
     }
 
@@ -374,10 +377,9 @@ export class InitiativeBridgeManager {
         }
     }
 
-    private handleFirestoreChange(data: any): void {
+    private handleFirestoreChange(data: any, prevData: any): void {
         if (!this.itAccess.isAvailable()) return;
 
-        const prevData = this.lastFirestoreState;
         const combatants: WebappCombatant[] = data.combatants || [];
         const prevCombatants: WebappCombatant[] = prevData?.combatants || [];
 
