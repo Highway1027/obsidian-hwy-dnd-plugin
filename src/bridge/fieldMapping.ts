@@ -1,122 +1,123 @@
 // src/bridge/fieldMapping.ts
-// v1 - 25-02-2026 - Field mapping between IT Plugin and Webapp combatant formats
+// v2 - 25-02-2026 - Updated to use correct IT plugin CreatureState field names
+
+import type { ITCreatureState } from './itPluginAccess';
 
 /**
- * Maps an Obsidian Initiative Tracker creature to the webapp's combatant format.
- * IT Plugin CreatureState → Webapp Firestore combatant
+ * Webapp combatant format (Firestore document fields).
  */
-export function itCreatureToFirestore(creature: any): any {
-    const id = crypto.randomUUID();
+export interface WebappCombatant {
+    id?: string;
+    name: string;
+    type: string;                // 'Player Character' | 'Monster' | 'Summon'
+    initiative: number | null;
+    hp?: number;
+    maxHp?: number;
+    tempHp?: number;
+    ac?: number;
+    isDead?: boolean;
+    isHiddenFromPlayers?: boolean;
+    deathRound?: number | null;
+    pcId?: string;
+    dndBeyondId?: string;
+    isPlayerSummon?: boolean;
+    summonInstanceId?: string;
+    conditions?: any[];
+    tieBreaker?: number;
+    initiative_modifier?: number;
+    hasAdvantage?: boolean;
+}
+
+/**
+ * Map an IT plugin CreatureState → webapp combatant format.
+ *
+ * Key field mappings:
+ *   IT: currentHP, currentMaxHP, tempHP, currentAC, player, active, hidden
+ *   Webapp: hp, maxHp, tempHp, ac, type='Player Character'|'Monster', isDead, isHiddenFromPlayers
+ */
+export function itCreatureToWebappCombatant(creature: ITCreatureState): WebappCombatant {
     const isPlayer = creature.player === true;
+    const name = creature.display || creature.name;
+
+    // Determine type
+    let type = 'Monster';
+    if (isPlayer) {
+        type = 'Player Character';
+    } else if (creature.friendly) {
+        type = 'Summon'; // Friendly non-player = ally/summon
+    }
 
     return {
-        id,
-        name: creature.name || creature.display || 'Unknown',
-        type: isPlayer ? 'Player Character' : 'Monster',
-        hp: creature.currentHP ?? creature.hp ?? null,
-        maxHp: creature.maxHP ?? creature.hp ?? null,
-        ac: creature.ac ?? null,
+        name: name,
+        type: type,
         initiative: creature.initiative ?? null,
-        initiative_modifier: creature.modifier ?? 0,
-        dexterity_score: null,
+        hp: creature.currentHP ?? creature.hp ?? 0,
+        maxHp: creature.currentMaxHP ?? creature.hp ?? 0,
+        tempHp: creature.tempHP ?? 0,
+        ac: typeof creature.ac === 'number' ? creature.ac : parseInt(String(creature.ac)) || 0,
         isDead: (creature.currentHP ?? creature.hp ?? 1) <= 0,
-        conditions: mapStatusToConditions(creature.status),
-        tieBreaker: Math.floor(Math.random() * 20) + 1,
-        isHiddenFromPlayers: !isPlayer,  // Monsters hidden until their turn
-        addedVia: 'obsidian-bridge',
-        // Preserve original IT name for syncing back
-        _itName: creature.name || creature.display,
+        isHiddenFromPlayers: creature.hidden ?? (!isPlayer), // Monsters default to hidden
+        initiative_modifier: Array.isArray(creature.modifier)
+            ? creature.modifier[0]
+            : (creature.modifier ?? 0),
     };
 }
 
 /**
- * Maps a webapp Firestore combatant to IT Plugin HomebrewCreature format.
- * For adding players from the webapp into the IT plugin.
+ * Map a webapp combatant → IT plugin HomebrewCreature format for adding.
+ * Used when syncing new combatants FROM the webapp TO the IT plugin.
  */
-export function firestoreCombatantToIT(combatant: any): any {
+export function webappCombatantToITCreature(combatant: WebappCombatant): any {
     return {
         name: combatant.name,
-        display: combatant.name,
-        hp: combatant.hp ?? combatant.maxHp ?? 10,
-        ac: combatant.ac ?? null,
-        initiative: combatant.initiative ?? null,
+        hp: combatant.maxHp ?? combatant.hp ?? 0,
+        ac: combatant.ac ?? 0,
         modifier: combatant.initiative_modifier ?? 0,
         player: combatant.type === 'Player Character',
+        friendly: combatant.type === 'Summon' || combatant.type === 'Player Character',
+        hidden: false, // PCs/summons from webapp are visible
     };
 }
 
 /**
- * Convert IT Plugin status Set<string> to webapp conditions array.
- */
-function mapStatusToConditions(status: any): { name: string; duration: number | null }[] {
-    if (!status) return [];
-
-    // Status can be a Set, Array, or other iterable
-    const statusArray = Array.isArray(status) ? status : Array.from(status || []);
-
-    return statusArray.map((s: any) => {
-        if (typeof s === 'string') {
-            return { name: s, duration: null };
-        }
-        // If it's already an object with name/duration
-        return { name: s.name || String(s), duration: s.duration ?? null };
-    });
-}
-
-/**
- * Convert webapp conditions array back to a simple string array for IT plugin.
- */
-export function conditionsToStatus(conditions: any[]): string[] {
-    if (!conditions || !Array.isArray(conditions)) return [];
-    return conditions.map(c => c.name || String(c));
-}
-
-/**
- * Diffs two combatant arrays and returns changes.
+ * Diff two combatant arrays to find changes.
+ * Returns added, removed, and changed combatants.
  */
 export function diffCombatants(
-    oldList: any[],
-    newList: any[]
+    oldList: WebappCombatant[],
+    newList: WebappCombatant[]
 ): {
-    added: any[];
-    removed: any[];
-    updated: { id: string; changes: Record<string, any> }[];
+    added: WebappCombatant[];
+    removed: WebappCombatant[];
+    changed: { combatant: WebappCombatant; changes: Partial<WebappCombatant> }[];
 } {
-    const oldMap = new Map(oldList.map(c => [c.id, c]));
-    const newMap = new Map(newList.map(c => [c.id, c]));
+    const oldMap = new Map(oldList.map(c => [c.name, c]));
+    const newMap = new Map(newList.map(c => [c.name, c]));
 
-    const added: any[] = [];
-    const removed: any[] = [];
-    const updated: { id: string; changes: Record<string, any> }[] = [];
+    const added = newList.filter(c => !oldMap.has(c.name));
+    const removed = oldList.filter(c => !newMap.has(c.name));
 
-    // Find added and updated
-    for (const [id, newC] of newMap) {
-        const oldC = oldMap.get(id);
-        if (!oldC) {
-            added.push(newC);
-            continue;
-        }
+    const changed: { combatant: WebappCombatant; changes: Partial<WebappCombatant> }[] = [];
 
-        // Check for meaningful changes
-        const changes: Record<string, any> = {};
+    for (const [name, newC] of newMap) {
+        const oldC = oldMap.get(name);
+        if (!oldC) continue;
+
+        const changes: Partial<WebappCombatant> = {};
+
         if (oldC.hp !== newC.hp) changes.hp = newC.hp;
         if (oldC.maxHp !== newC.maxHp) changes.maxHp = newC.maxHp;
         if (oldC.ac !== newC.ac) changes.ac = newC.ac;
         if (oldC.initiative !== newC.initiative) changes.initiative = newC.initiative;
         if (oldC.isDead !== newC.isDead) changes.isDead = newC.isDead;
-        if (oldC.isHiddenFromPlayers !== newC.isHiddenFromPlayers) changes.isHiddenFromPlayers = newC.isHiddenFromPlayers;
+        if (oldC.isHiddenFromPlayers !== newC.isHiddenFromPlayers) {
+            changes.isHiddenFromPlayers = newC.isHiddenFromPlayers;
+        }
 
         if (Object.keys(changes).length > 0) {
-            updated.push({ id, changes });
+            changed.push({ combatant: newC, changes });
         }
     }
 
-    // Find removed
-    for (const [id, oldC] of oldMap) {
-        if (!newMap.has(id)) {
-            removed.push(oldC);
-        }
-    }
-
-    return { added, removed, updated };
+    return { added, removed, changed };
 }

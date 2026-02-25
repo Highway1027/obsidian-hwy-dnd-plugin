@@ -1,12 +1,74 @@
 // src/bridge/itPluginAccess.ts
-// v1 - 25-02-2026 - Wrapper for interacting with the javalent Initiative Tracker plugin
+// v2 - 25-02-2026 - Complete rewrite using real IT plugin internals from source analysis
 
 import { App, Notice } from 'obsidian';
 
 /**
- * Wrapper for accessing and controlling the javalent Initiative Tracker plugin.
- * Uses official API where available, falls back to internal access for
- * turn advancement, HP changes, and creature removal.
+ * CreatureState matches the IT plugin's internal CreatureState interface.
+ * Used to understand the save-state event data.
+ */
+export interface ITCreatureState {
+    name: string;
+    display?: string;
+    initiative: number;
+    hp: number;          // max HP
+    currentHP: number;
+    currentMaxHP: number;
+    tempHP: number;
+    ac: number | string;
+    currentAC: number | string;
+    modifier: number | number[];
+    player: boolean;
+    active: boolean;
+    hidden: boolean;
+    enabled: boolean;
+    id: string;
+    status: string[];
+    friendly?: boolean;
+    static?: boolean;
+    level?: number;
+    xp?: number;
+    marker?: string;
+    note?: string;
+    path?: string;
+    cr?: string | number;
+    hit_dice?: string;
+    rollHP?: boolean;
+    number?: number;
+    'statblock-link'?: string;
+}
+
+/**
+ * InitiativeViewState matches the IT plugin's save-state event payload.
+ */
+export interface ITViewState {
+    creatures: ITCreatureState[];
+    state: boolean;      // combat started?
+    name: string;
+    round: number;
+    logFile: string;
+    roll?: boolean;
+    rollHP?: boolean;
+    timestamp?: number;
+}
+
+/**
+ * Provides access to the IT plugin's internal tracker store and API.
+ *
+ * Access path:
+ *   window.InitiativeTracker          → API instance
+ *   window.InitiativeTracker.plugin   → InitiativeTracker plugin instance
+ *   window.InitiativeTracker.plugin.tracker → Svelte store with all methods
+ *
+ * The tracker store exposes:
+ *   - goToNext() / goToPrevious()   → turn advancement
+ *   - updateCreatures({creature, change}) → update HP, initiative, status, etc.
+ *   - updateCreatureByName(name, change) → same but by name lookup
+ *   - add(plugin, roll, ...creatures) → add creatures (with optional roll)
+ *   - remove(...creatures) → remove creatures
+ *   - getOrderedCreatures() → get sorted creature array
+ *   - ordered → Svelte derived store of ordered creatures
+ *   - new(plugin, state?) → start new encounter
  */
 export class ITPluginAccess {
     private app: App;
@@ -16,246 +78,314 @@ export class ITPluginAccess {
     }
 
     /**
-     * Get the Initiative Tracker plugin instance.
+     * Get the IT plugin's API (window.InitiativeTracker).
      */
-    getPlugin(): any | null {
-        return (this.app as any).plugins?.plugins?.['initiative-tracker'] ?? null;
+    private getAPI(): any | null {
+        return (window as any).InitiativeTracker ?? null;
     }
 
     /**
-     * Check if the IT plugin is installed and enabled.
+     * Get the IT plugin instance.
+     */
+    private getPlugin(): any | null {
+        return this.getAPI()?.plugin ?? null;
+    }
+
+    /**
+     * Get the tracker Svelte store with all internal methods.
+     */
+    private getTrackerStore(): any | null {
+        return this.getPlugin()?.tracker ?? null;
+    }
+
+    /**
+     * Check if the IT plugin is available and loaded.
      */
     isAvailable(): boolean {
-        const plugin = this.getPlugin();
-        return plugin !== null && plugin !== undefined;
+        return this.getTrackerStore() !== null;
+    }
+
+    // ==========================================
+    // TURN MANAGEMENT
+    // ==========================================
+
+    /**
+     * Advance to the next turn. Uses tracker.goToNext() which
+     * handles round increment, status reset, and triggers save-state.
+     */
+    goToNext(): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.goToNext) {
+            console.warn('[ITPluginAccess] goToNext not available');
+            return false;
+        }
+        store.goToNext();
+        return true;
     }
 
     /**
-     * Get the IT plugin's public API.
+     * Go to the previous turn.
      */
-    getApi(): any | null {
-        const plugin = this.getPlugin();
-        return plugin?.api ?? null;
+    goToPrevious(): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.goToPrevious) {
+            console.warn('[ITPluginAccess] goToPrevious not available');
+            return false;
+        }
+        store.goToPrevious();
+        return true;
     }
 
     /**
-     * Get the current encounter state from the IT plugin.
-     * Listens to the workspace event to capture current state.
+     * Set a specific creature as the active one by name.
+     * Uses updateAndSave to directly manipulate active flags.
      */
-    getCurrentState(): any | null {
-        const plugin = this.getPlugin();
-        if (!plugin) return null;
+    setActiveTurn(targetName: string): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateAndSave) {
+            // Fallback: advance until we reach the target
+            return this.advanceToCreature(targetName);
+        }
 
-        // Try to access the tracker view's state directly
         try {
-            // The IT plugin stores its tracker view state internally
-            // We try several known access paths
-            const view = this.getTrackerView();
-            if (view) {
-                return this.extractStateFromView(view);
+            // Get ordered creatures to find the target
+            const ordered = store.getOrderedCreatures?.() ?? [];
+            const target = ordered.find((c: any) => c.getName?.() === targetName || c.name === targetName);
+            if (!target) {
+                console.warn(`[ITPluginAccess] Creature "${targetName}" not found`);
+                return false;
             }
-        } catch (e) {
-            console.warn('[Bridge] Could not read IT plugin state:', e);
-        }
 
-        return null;
-    }
+            // Use updateCreatures to set active flags
+            const updates: { creature: any; change: any }[] = [];
+            for (const creature of ordered) {
+                if (creature === target) {
+                    if (!creature.active) {
+                        updates.push({ creature, change: {} }); // Trigger save
+                        creature.active = true;
+                    }
+                } else {
+                    if (creature.active) {
+                        creature.active = false;
+                    }
+                }
+            }
 
-    /**
-     * Get the tracker Leaf/View from the workspace.
-     */
-    private getTrackerView(): any | null {
-        const plugin = this.getPlugin();
-        if (!plugin) return null;
-
-        // The IT plugin registers a view type 'initiative-tracker-view' or similar
-        const leaves = this.app.workspace.getLeavesOfType('initiative-tracker');
-        if (leaves.length > 0) {
-            return leaves[0].view;
-        }
-
-        // Fallback: check for the tracker view type used by newer versions
-        const altLeaves = this.app.workspace.getLeavesOfType('initiative-tracker-view');
-        if (altLeaves.length > 0) {
-            return altLeaves[0].view;
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract state from the tracker view instance.
-     */
-    private extractStateFromView(view: any): any {
-        // The view may expose state through different properties depending on version
-        // Common patterns in Svelte-based Obsidian plugins:
-        if (view.state) return view.state;
-        if (view.data) return view.data;
-        if (view.getState) return view.getState();
-
-        // Try accessing the Svelte component's store
-        if (view.component?.$$.ctx) {
-            // Svelte component context - varies by version
-            return null;
-        }
-
-        return null;
-    }
-
-    /**
-     * Add creatures to the current encounter using the official API.
-     */
-    addCreatures(creatures: any[], rollHP: boolean = false): boolean {
-        const api = this.getApi();
-        if (!api) {
-            new Notice('Initiative Tracker plugin not found.');
-            return false;
-        }
-
-        try {
-            api.addCreatures(creatures, rollHP);
+            // Trigger save
+            store.updateAndSave();
             return true;
-        } catch (e) {
-            console.error('[Bridge] Failed to add creatures via API:', e);
+        } catch (err) {
+            console.error('[ITPluginAccess] setActiveTurn error:', err);
             return false;
         }
     }
 
     /**
-     * Start a new encounter with the given state using the official API.
+     * Advance turns until we reach the target creature.
+     * Safety limit prevents infinite loops.
      */
-    newEncounter(state?: any): boolean {
-        const api = this.getApi();
-        if (!api) {
-            new Notice('Initiative Tracker plugin not found.');
+    private advanceToCreature(targetName: string, maxSteps: number = 30): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.goToNext || !store?.getOrderedCreatures) return false;
+
+        for (let i = 0; i < maxSteps; i++) {
+            const ordered = store.getOrderedCreatures();
+            const active = ordered.find((c: any) => c.active);
+            if (active && (active.getName?.() === targetName || active.name === targetName)) {
+                return true; // We've reached the target
+            }
+            store.goToNext();
+        }
+
+        console.warn(`[ITPluginAccess] Could not reach "${targetName}" in ${maxSteps} steps`);
+        return false;
+    }
+
+    // ==========================================
+    // CREATURE UPDATES
+    // ==========================================
+
+    /**
+     * Update a creature's HP by directly setting it.
+     * Uses the `set_hp` field which bypasses the damage/healing flow.
+     */
+    setCreatureHP(name: string, hp: number): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) {
+            console.warn('[ITPluginAccess] updateCreatureByName not available');
+            return false;
+        }
+        store.updateCreatureByName(name, { set_hp: hp });
+        return true;
+    }
+
+    /**
+     * Set a creature's max HP.
+     */
+    setCreatureMaxHP(name: string, maxHp: number): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) return false;
+        store.updateCreatureByName(name, { set_max_hp: maxHp });
+        return true;
+    }
+
+    /**
+     * Set a creature's initiative value.
+     */
+    setCreatureInitiative(name: string, initiative: number): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) {
+            console.warn('[ITPluginAccess] updateCreatureByName not available');
+            return false;
+        }
+        store.updateCreatureByName(name, { initiative });
+        return true;
+    }
+
+    /**
+     * Add a status condition to a creature by name.
+     * The IT plugin resolves status names from its configured statuses list.
+     */
+    addStatusByName(creatureName: string, statusName: string): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) return false;
+        store.updateCreatureByName(creatureName, { status: [statusName] });
+        return true;
+    }
+
+    /**
+     * Set creature's hidden flag.
+     */
+    setCreatureHidden(name: string, hidden: boolean): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateCreatureByName) return false;
+        store.updateCreatureByName(name, { hidden });
+        return true;
+    }
+
+    // ==========================================
+    // CREATURE ADD / REMOVE
+    // ==========================================
+
+    /**
+     * Add creatures using the public API.
+     * NOTE: This calls rollInitiative() internally on the added creatures.
+     * If you need to set specific initiative values, call setCreatureInitiative() after.
+     */
+    addCreatures(creatures: any[]): boolean {
+        const api = this.getAPI();
+        if (!api?.addCreatures) {
+            console.warn('[ITPluginAccess] addCreatures API not available');
+            return false;
+        }
+        try {
+            api.addCreatures(creatures, false); // false = don't roll HP
+            return true;
+        } catch (err) {
+            console.error('[ITPluginAccess] addCreatures error:', err);
+            return false;
+        }
+    }
+
+    /**
+     * Add creatures and then immediately set their initiative values.
+     * Solves the problem of addCreatures() rolling random initiative.
+     */
+    addCreaturesWithInitiative(creatures: { creature: any; initiative: number }[]): boolean {
+        // First add all creatures (they'll get random initiative)
+        const added = this.addCreatures(creatures.map(c => c.creature));
+        if (!added) return false;
+
+        // Then immediately correct their initiative values
+        for (const { creature, initiative } of creatures) {
+            if (initiative !== undefined && initiative !== null) {
+                this.setCreatureInitiative(creature.name, initiative);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Remove a creature by name from the tracker.
+     */
+    removeCreatureByName(name: string): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.getOrderedCreatures || !store?.remove) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) =>
+            c.getName?.() === name || c.name === name
+        );
+
+        if (!creature) {
+            console.warn(`[ITPluginAccess] Creature "${name}" not found for removal`);
             return false;
         }
 
+        store.remove(creature);
+        return true;
+    }
+
+    // ==========================================
+    // STATE READING
+    // ==========================================
+
+    /**
+     * Get the ordered list of creatures in the current encounter.
+     */
+    getOrderedCreatures(): any[] {
+        const store = this.getTrackerStore();
+        if (!store?.getOrderedCreatures) return [];
+        return store.getOrderedCreatures();
+    }
+
+    /**
+     * Get the currently active creature.
+     */
+    getActiveCreature(): any | null {
+        const ordered = this.getOrderedCreatures();
+        return ordered.find((c: any) => c.active) ?? null;
+    }
+
+    /**
+     * Get the current round number.
+     */
+    getCurrentRound(): number {
+        const store = this.getTrackerStore();
+        if (!store?.round) return 1;
+        // Svelte store - need to use get()
+        try {
+            // Try to read from the store directly
+            let round = 1;
+            const unsub = store.round.subscribe?.((val: number) => { round = val; });
+            unsub?.();
+            return round;
+        } catch {
+            return 1;
+        }
+    }
+
+    /**
+     * Check if combat has been started (play button pressed).
+     */
+    isCombatStarted(): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.getState) return false;
+        return store.getState();
+    }
+
+    /**
+     * Start a new encounter via the public API.
+     * This will replace the current encounter.
+     */
+    newEncounter(state?: ITViewState): boolean {
+        const api = this.getAPI();
+        if (!api?.newEncounter) return false;
         try {
             api.newEncounter(state);
             return true;
-        } catch (e) {
-            console.error('[Bridge] Failed to start new encounter via API:', e);
-            return false;
-        }
-    }
-
-    /**
-     * Register a listener for the IT plugin's state changes.
-     * The IT plugin emits 'initiative-tracker:save-state' on every change.
-     */
-    onStateChange(callback: (state: any) => void): () => void {
-        const handler = this.app.workspace.on('initiative-tracker:save-state' as any, callback);
-
-        return () => {
-            this.app.workspace.offref(handler);
-        };
-    }
-
-    /**
-     * Register a listener for encounter stop.
-     */
-    onEncounterStop(callback: () => void): () => void {
-        const handler = this.app.workspace.on('initiative-tracker:stop-viewing' as any, callback);
-
-        return () => {
-            this.app.workspace.offref(handler);
-        };
-    }
-
-    /**
-     * Try to advance the turn in the IT plugin.
-     * This uses internal access since the official API doesn't expose this.
-     */
-    advanceTurn(): boolean {
-        try {
-            const view = this.getTrackerView();
-            if (!view) return false;
-
-            // Try known internal methods/stores
-            // Method 1: Direct method call
-            if (typeof view.next === 'function') {
-                view.next();
-                return true;
-            }
-
-            // Method 2: Svelte store dispatch
-            if (view.component) {
-                // Try accessing the component's methods
-                const component = view.component;
-                if (typeof component.next === 'function') {
-                    component.next();
-                    return true;
-                }
-            }
-
-            // Method 3: Workspace event trigger
-            this.app.workspace.trigger('initiative-tracker:next' as any);
-            return true;
-
-        } catch (e) {
-            console.error('[Bridge] Failed to advance turn:', e);
-            return false;
-        }
-    }
-
-    /**
-     * Update a creature's HP in the IT plugin.
-     * Uses internal access since the official API doesn't support this.
-     */
-    updateCreatureHP(creatureName: string, hp: number, maxHp?: number): boolean {
-        try {
-            const view = this.getTrackerView();
-            if (!view) return false;
-
-            // Try to find the creature in the view's data and update it
-            // This will depend on the internal structure we discover at runtime
-            const state = this.extractStateFromView(view);
-            if (state?.creatures) {
-                const creature = state.creatures.find((c: any) =>
-                    c.name === creatureName || c.display === creatureName
-                );
-                if (creature) {
-                    creature.currentHP = hp;
-                    if (maxHp !== undefined) creature.maxHP = maxHp;
-                    // Trigger a re-render / save
-                    this.app.workspace.trigger('initiative-tracker:should-save' as any);
-                    return true;
-                }
-            }
-
-            return false;
-        } catch (e) {
-            console.error('[Bridge] Failed to update creature HP:', e);
-            return false;
-        }
-    }
-
-    /**
-     * Remove a creature from the IT plugin by name.
-     * Uses internal access.
-     */
-    removeCreature(creatureName: string): boolean {
-        try {
-            const state = this.getCurrentState();
-            if (!state?.creatures) return false;
-
-            // Filter out the creature and replace the state
-            const filtered = state.creatures.filter((c: any) =>
-                c.name !== creatureName && c.display !== creatureName
-            );
-
-            if (filtered.length < state.creatures.length) {
-                // Use newEncounter to replace the full state (official API fallback)
-                return this.newEncounter({
-                    ...state,
-                    creatures: filtered
-                });
-            }
-
-            return false;
-        } catch (e) {
-            console.error('[Bridge] Failed to remove creature:', e);
+        } catch (err) {
+            console.error('[ITPluginAccess] newEncounter error:', err);
             return false;
         }
     }
