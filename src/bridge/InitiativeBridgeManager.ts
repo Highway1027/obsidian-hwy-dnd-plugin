@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v6 - 25-02-2026 - Use setCreatureFullStats for PC HP, no auto-removal, assign obsidianId
+// v7 - 26-02-2026 - Fix late PC listeners, refresh on combatant change
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -59,6 +59,7 @@ export class InitiativeBridgeManager {
 
     // PC character data cache (from Firestore character docs)
     private pcCharacterData: Map<string, any> = new Map();
+    private monitoredPcIds: Set<string> = new Set();
 
     get isConnected(): boolean {
         return this._isConnected;
@@ -296,6 +297,7 @@ export class InitiativeBridgeManager {
             unsub();
         }
         this.characterUnsubscribes = [];
+        this.monitoredPcIds.clear();
 
         // Find unique PC IDs
         const pcIds = new Set<string>();
@@ -328,6 +330,27 @@ export class InitiativeBridgeManager {
         }
 
         console.log(`[Bridge] Listening to ${pcIds.size} character docs for HP/AC sync`);
+        this.monitoredPcIds = pcIds;
+    }
+
+    /**
+     * Check if the set of PC IDs in the combatant list changed, and refresh listeners if so.
+     */
+    private refreshCharacterListenersIfNeeded(combatants: WebappCombatant[]): void {
+        const currentPcIds = new Set<string>();
+        for (const combatant of combatants) {
+            const pcId = combatant.pcId || (combatant as any).ownerId;
+            if (pcId && (combatant.type === 'Player Character' || (combatant as any).isPlayerSummon)) {
+                currentPcIds.add(pcId);
+            }
+        }
+
+        // Check if the set changed
+        if (currentPcIds.size !== this.monitoredPcIds.size ||
+            [...currentPcIds].some(id => !this.monitoredPcIds.has(id))) {
+            console.log(`[Bridge] PC set changed (${this.monitoredPcIds.size} → ${currentPcIds.size}), refreshing character listeners`);
+            this.setupCharacterListeners(combatants);
+        }
     }
 
     /**
@@ -385,10 +408,8 @@ export class InitiativeBridgeManager {
         const combatants: WebappCombatant[] = data.combatants || [];
         const prevCombatants: WebappCombatant[] = prevData?.combatants || [];
 
-        // Set up character listeners if needed
-        if (this.characterUnsubscribes.length === 0) {
-            this.setupCharacterListeners(combatants);
-        }
+        // Refresh character listeners if the set of PC IDs changed
+        this.refreshCharacterListenersIfNeeded(combatants);
 
         // Build lookup maps — by obsidianId if available, else by name
         const prevByObsId = new Map<string, WebappCombatant>();
