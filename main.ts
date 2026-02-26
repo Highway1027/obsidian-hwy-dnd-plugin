@@ -1,8 +1,9 @@
 // main.ts
-// v9 - 25-02-2026 - Added Initiative Bridge integration (Firebase SDK + IT plugin sync)
+// v10 - 26-02-2026 - Added status bar, ribbon icon, sidebar view, help section
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 import { InitiativeBridgeManager } from './src/bridge/InitiativeBridgeManager';
 import { ShareInitiativeModal } from './src/bridge/ShareInitiativeModal';
+import { BridgeStatusView, BRIDGE_STATUS_VIEW_TYPE } from './src/bridge/BridgeStatusView';
 import { signOutFirebase } from './src/firebase';
 
 // Define the settings that our plugin will store.
@@ -43,6 +44,7 @@ const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
 export default class HwysDnDToolsPlugin extends Plugin {
     settings: HwysDnDToolsSettings;
     bridgeManager: InitiativeBridgeManager | null = null;
+    private statusBarEl: HTMLElement | null = null;
 
     // This function runs when the plugin is first loaded.
     async onload() {
@@ -238,31 +240,59 @@ export default class HwysDnDToolsPlugin extends Plugin {
         if (this.settings.enableInitiativeBridge) {
             this.bridgeManager = new InitiativeBridgeManager(this.app);
 
+            // Status bar indicator
+            this.statusBarEl = this.addStatusBarItem();
+            this.statusBarEl.setText('🔴 Bridge: Off');
+            this.statusBarEl.style.cursor = 'pointer';
+            this.statusBarEl.addEventListener('click', () => {
+                if (this.bridgeManager?.isConnected) {
+                    this.bridgeManager.disconnect();
+                } else {
+                    this.openShareModal();
+                }
+            });
+
+            // Wire up status change callback
+            this.bridgeManager.onStatusChange = (connected, info) => {
+                if (this.statusBarEl) {
+                    this.statusBarEl.setText(
+                        connected
+                            ? `🟢 Bridge: ${this.bridgeManager?.trackerName || 'Connected'}`
+                            : '🔴 Bridge: Off'
+                    );
+                }
+            };
+
+            // Register sidebar view
+            this.registerView(
+                BRIDGE_STATUS_VIEW_TYPE,
+                (leaf) => {
+                    const view = new BridgeStatusView(leaf);
+                    if (this.bridgeManager) {
+                        view.setBridgeManager(this.bridgeManager);
+                    }
+                    view.setCallbacks(
+                        () => this.openShareModal(),
+                        () => this.bridgeManager?.disconnect(),
+                    );
+                    return view;
+                }
+            );
+
+            // Ribbon icon
+            this.addRibbonIcon('swords', 'Initiative Bridge', () => {
+                if (this.bridgeManager?.isConnected) {
+                    this.toggleBridgeSidebar();
+                } else {
+                    this.openShareModal();
+                }
+            });
+
+            // Commands
             this.addCommand({
                 id: 'share-initiative',
                 name: 'Share Initiative to Webapp',
-                callback: async () => {
-                    if (!this.settings.apiToken) {
-                        new Notice('Error: API Token not set. Please add it in the plugin settings.');
-                        return;
-                    }
-
-                    if (!this.bridgeManager) {
-                        this.bridgeManager = new InitiativeBridgeManager(this.app);
-                    }
-
-                    new ShareInitiativeModal(
-                        this.app,
-                        {
-                            apiToken: this.settings.apiToken,
-                            caravanId: this.settings.defaultCaravanId,
-                            lastUsedCaravanId: this.settings.lastUsedCaravanId,
-                            enableInitiativeBridge: this.settings.enableInitiativeBridge,
-                        },
-                        this.bridgeManager,
-                        async () => { await this.saveSettings(); }
-                    ).open();
-                }
+                callback: () => this.openShareModal(),
             });
 
             this.addCommand({
@@ -276,9 +306,49 @@ export default class HwysDnDToolsPlugin extends Plugin {
                     }
                 }
             });
+
+            this.addCommand({
+                id: 'toggle-bridge-sidebar',
+                name: 'Toggle Bridge Status Panel',
+                callback: () => this.toggleBridgeSidebar(),
+            });
         }
 
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
+    }
+
+    private openShareModal(): void {
+        if (!this.settings.apiToken) {
+            new Notice('Error: API Token not set. Please add it in the plugin settings.');
+            return;
+        }
+        if (!this.bridgeManager) {
+            this.bridgeManager = new InitiativeBridgeManager(this.app);
+        }
+        new ShareInitiativeModal(
+            this.app,
+            {
+                apiToken: this.settings.apiToken,
+                caravanId: this.settings.defaultCaravanId,
+                lastUsedCaravanId: this.settings.lastUsedCaravanId,
+                enableInitiativeBridge: this.settings.enableInitiativeBridge,
+            },
+            this.bridgeManager,
+            async () => { await this.saveSettings(); }
+        ).open();
+    }
+
+    private async toggleBridgeSidebar(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(BRIDGE_STATUS_VIEW_TYPE);
+        if (existing.length > 0) {
+            existing[0].detach();
+        } else {
+            const leaf = this.app.workspace.getRightLeaf(false);
+            if (leaf) {
+                await leaf.setViewState({ type: BRIDGE_STATUS_VIEW_TYPE, active: true });
+                this.app.workspace.revealLeaf(leaf);
+            }
+        }
     }
 
     promptForCaravanId(): Promise<string | null> {
@@ -849,11 +919,65 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
         if (this.plugin.settings.enableInitiativeBridge) {
             const cmd4 = cmdList.createEl('li');
             cmd4.createEl('strong', { text: 'Share Initiative to Webapp: ' });
-            cmd4.createSpan({ text: 'Syncs your Obsidian Initiative Tracker with the webapp for real-time bidirectional combat tracking.' });
+            cmd4.createSpan({ text: 'Opens the bridge connection modal. Also accessible via the ⚔ ribbon icon or status bar.' });
 
             const cmd5 = cmdList.createEl('li');
             cmd5.createEl('strong', { text: 'Disconnect Initiative Bridge: ' });
-            cmd5.createSpan({ text: 'Stops the real-time sync between Obsidian and the webapp.' });
+            cmd5.createSpan({ text: 'Stops the real-time sync. Also click the status bar or use the sidebar panel.' });
+
+            const cmd6 = cmdList.createEl('li');
+            cmd6.createEl('strong', { text: 'Toggle Bridge Status Panel: ' });
+            cmd6.createSpan({ text: 'Opens/closes the sidebar showing live bridge info.' });
+        }
+
+        // Initiative Bridge Help Section
+        if (this.plugin.settings.enableInitiativeBridge) {
+            containerEl.createEl('h3', { text: '📖 Initiative Bridge Guide', attr: { style: 'margin-top: 30px;' } });
+
+            // What syncs
+            containerEl.createEl('h4', { text: 'What Syncs', attr: { style: 'margin-top: 16px;' } });
+            const syncList = containerEl.createEl('ul');
+            const syncItems = [
+                ['Turn Order', 'Advancing turns in either system keeps both in sync.'],
+                ['Monster HP', 'Reducing HP in Obsidian updates the webapp. At 0 HP, monsters auto-disable and move to graveyard.'],
+                ['PC HP & AC', 'Live from D&D Beyond via the webapp. Updates whenever D&D Beyond syncs.'],
+                ['Summon HP', 'Summons linked to PCs sync HP from the owner\'s character document.'],
+                ['Wildshape HP', 'When a druid wildshapes, Obsidian shows the wildshape HP pool instead of base HP.'],
+                ['Initiative', 'Changes in either direction sync automatically.'],
+                ['Death & Graveyard', 'Monsters die instantly at 0 HP. PCs stay in initiative for death saves until manually graveyarded.'],
+                ['New Combatants', 'Adding monsters in Obsidian or PCs in the webapp syncs to the other.'],
+            ];
+            for (const [title, desc] of syncItems) {
+                const li = syncList.createEl('li');
+                li.createEl('strong', { text: title + ': ' });
+                li.createSpan({ text: desc });
+            }
+
+            // How to use
+            containerEl.createEl('h4', { text: 'How to Use', attr: { style: 'margin-top: 16px;' } });
+            const howList = containerEl.createEl('ol');
+            howList.createEl('li', { text: 'Enable the Initiative Bridge toggle above and restart Obsidian.' });
+            howList.createEl('li', { text: 'Open the Initiative Tracker plugin (javalent) and add your combatants.' });
+            howList.createEl('li', { text: 'Click the ⚔ sword icon in the left ribbon, or run "Share Initiative to Webapp" from the command palette.' });
+            howList.createEl('li', { text: 'Select an existing tracker or create a new one to connect.' });
+            howList.createEl('li', { text: 'The status bar at the bottom shows 🟢 when connected. Click it to disconnect.' });
+            howList.createEl('li', { text: 'Use the sidebar panel (⚔ icon when connected) for live tracker info.' });
+
+            // Known edge cases
+            containerEl.createEl('h4', { text: '⚠️ Known Edge Cases', attr: { style: 'margin-top: 16px;' } });
+            const edgeList = containerEl.createEl('ul');
+            const edgeItems = [
+                ['Drag-and-Drop Reorder', 'Reordering creatures by dragging in the IT plugin may trigger rapid state changes that break sync. Change initiative values directly instead.'],
+                ['Renaming Combatants', 'If a combatant is renamed in the webapp after being synced, matching may fail. The bridge assigns stable IDs (obsidianId) to prevent this, but timing edges exist.'],
+                ['Monster Visibility', 'Monsters are marked as hidden until their turn but the DM always sees them. A "player mode" toggle is planned but not yet implemented.'],
+                ['PC Death Saves', 'PCs at 0 HP stay in initiative order for death saving throws. They are only removed when manually moved to the graveyard in the webapp.'],
+                ['New Encounter', 'Starting a new encounter in the IT plugin auto-disconnects the bridge to prevent wiping the webapp tracker.'],
+            ];
+            for (const [title, desc] of edgeItems) {
+                const li = edgeList.createEl('li');
+                li.createEl('strong', { text: title + ': ' });
+                li.createSpan({ text: desc });
+            }
         }
     }
 }

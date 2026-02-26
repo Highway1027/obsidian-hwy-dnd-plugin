@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v8 - 26-02-2026 - Summon/wildshape HP sync, late PC listener refresh, external turn sync
+// v9 - 26-02-2026 - Added onStatusChange callback, getStatusInfo for sidebar view
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -61,8 +61,27 @@ export class InitiativeBridgeManager {
     private pcCharacterData: Map<string, any> = new Map();
     private monitoredPcIds: Set<string> = new Set();
 
+    // Status change callback for UI components (status bar, sidebar)
+    public onStatusChange: ((connected: boolean, info?: { trackerName?: string; caravanId?: string }) => void) | null = null;
+
     get isConnected(): boolean {
         return this._isConnected;
+    }
+
+    get trackerName(): string | null {
+        return this.lastFirestoreState?.name || null;
+    }
+
+    /** Get current bridge status info for UI display */
+    getStatusInfo(): { connected: boolean; trackerName: string | null; caravanId: string | null; combatantCount: number; round: number; turn: number } {
+        return {
+            connected: this._isConnected,
+            trackerName: this.lastFirestoreState?.name || null,
+            caravanId: this.caravanId,
+            combatantCount: this.lastFirestoreState?.combatants?.length || 0,
+            round: this.lastFirestoreState?.round || 0,
+            turn: this.lastFirestoreState?.turn || 0,
+        };
     }
 
     constructor(app: App) {
@@ -178,6 +197,9 @@ export class InitiativeBridgeManager {
         this.trackerId = trackerId;
         this._isConnected = true;
 
+        console.log(`[Bridge] Connected: ${caravanId}/${trackerId}`);
+        this.onStatusChange?.(true, { caravanId });
+
         // Store initial IT creature state
         this.snapshotITState();
 
@@ -246,6 +268,7 @@ export class InitiativeBridgeManager {
 
         new Notice('🔴 Initiative Bridge disconnected');
         console.log('[Bridge] Disconnected');
+        this.onStatusChange?.(false);
     }
 
     // ==========================================
