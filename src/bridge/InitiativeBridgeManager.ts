@@ -358,8 +358,7 @@ export class InitiativeBridgeManager {
      */
     private handleCharacterDataChange(pcId: string, charData: any, prevData: any): void {
         // NOTE: No suppressITUntil check here — character doc changes are one-directional
-        // (Firestore → IT) so there's no echo loop risk. The suppression was previously
-        // blocking initial PC HP/AC sync because it fires right after PCs are added to IT.
+        // (Firestore → IT) so there's no echo loop risk.
 
         const combatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
 
@@ -368,36 +367,91 @@ export class InitiativeBridgeManager {
             if (refId !== pcId) continue;
 
             const name = combatant.name;
-            const currentHP = charData.currentHP ?? charData.hp;
-            const maxHP = charData.maxHP ?? charData.maxHp;
-            const ac = charData.armorClass ?? charData.ac;
+            const isSummon = combatant.type === 'Summon' && (combatant as any).isPlayerSummon;
 
-            // On first load or significant change, set all stats at once
-            if (!prevData && currentHP !== undefined && maxHP !== undefined) {
-                this.itAccess.setCreatureFullStats(name, currentHP, maxHP, ac);
-                console.log(`[Bridge] PC initial stats: "${name}" → ${currentHP}/${maxHP} AC:${ac}`);
+            // --- Resolve effective HP based on combatant type ---
+            let effectiveHP: number | undefined;
+            let effectiveMaxHP: number | undefined;
+            let effectiveAC: number | string | undefined;
+
+            if (isSummon) {
+                // Summon: read from activeSummon on the OWNER's character doc
+                const summonData = charData.activeSummon;
+                if (summonData && summonData.instanceId === (combatant as any).summonInstanceId) {
+                    effectiveHP = summonData.currentHP;
+                    effectiveMaxHP = summonData.maxHP;
+                } else {
+                    // No active summon data for this instance — skip
+                    continue;
+                }
+            } else {
+                // PC: check for wildshape first, then base stats
+                const wildshapeData = charData.activeWildshapeData;
+                if (wildshapeData) {
+                    // Wildshaped — show wildshape HP
+                    effectiveHP = wildshapeData.currentHP;
+                    effectiveMaxHP = wildshapeData.maxHPOverride || wildshapeData.currentHP;
+                    console.log(`[Bridge] Wildshape HP: "${name}" → ${effectiveHP}/${effectiveMaxHP}`);
+                } else {
+                    // Normal PC stats
+                    effectiveHP = charData.currentHP ?? charData.hp;
+                    effectiveMaxHP = charData.maxHP ?? charData.maxHp;
+                }
+                effectiveAC = charData.armorClass ?? charData.ac;
+            }
+
+            // --- Apply stats ---
+            if (!prevData && effectiveHP !== undefined && effectiveMaxHP !== undefined) {
+                // First load — set all stats at once
+                this.itAccess.setCreatureFullStats(name, effectiveHP, effectiveMaxHP, effectiveAC);
+                console.log(`[Bridge] Initial stats: "${name}" → ${effectiveHP}/${effectiveMaxHP} AC:${effectiveAC ?? '-'}`);
+                continue;
+            }
+
+            // Resolve previous effective stats for diffing
+            let prevEffHP: number | undefined;
+            let prevEffMaxHP: number | undefined;
+            let prevEffAC: number | string | undefined;
+
+            if (prevData) {
+                if (isSummon) {
+                    const prevSummon = prevData.activeSummon;
+                    prevEffHP = prevSummon?.currentHP;
+                    prevEffMaxHP = prevSummon?.maxHP;
+                } else {
+                    const prevWild = prevData.activeWildshapeData;
+                    if (prevWild) {
+                        prevEffHP = prevWild.currentHP;
+                        prevEffMaxHP = prevWild.maxHPOverride || prevWild.currentHP;
+                    } else {
+                        prevEffHP = prevData.currentHP ?? prevData.hp;
+                        prevEffMaxHP = prevData.maxHP ?? prevData.maxHp;
+                    }
+                    prevEffAC = prevData.armorClass ?? prevData.ac;
+                }
+            }
+
+            // Detect wildshape state change (entered or exited)
+            const wasWildshaped = !!prevData?.activeWildshapeData;
+            const isWildshaped = !!charData.activeWildshapeData;
+            if (wasWildshaped !== isWildshaped && effectiveHP !== undefined && effectiveMaxHP !== undefined) {
+                // Wildshape state changed — full refresh
+                this.itAccess.setCreatureFullStats(name, effectiveHP, effectiveMaxHP, effectiveAC);
+                console.log(`[Bridge] Wildshape ${isWildshaped ? 'entered' : 'exited'}: "${name}" → ${effectiveHP}/${effectiveMaxHP}`);
                 continue;
             }
 
             // Incremental updates
-            const prevHP = prevData ? (prevData.currentHP ?? prevData.hp) : undefined;
-            const prevMaxHP = prevData ? (prevData.maxHP ?? prevData.maxHp) : undefined;
-            const prevAC = prevData ? (prevData.armorClass ?? prevData.ac) : undefined;
-
-            let changed = false;
-            if (currentHP !== undefined && currentHP !== prevHP) {
-                this.itAccess.setCreatureHP(name, currentHP);
-                console.log(`[Bridge] PC HP sync: "${name}" → ${currentHP}`);
-                changed = true;
+            if (effectiveHP !== undefined && effectiveHP !== prevEffHP) {
+                this.itAccess.setCreatureHP(name, effectiveHP);
+                console.log(`[Bridge] HP sync: "${name}" → ${effectiveHP}`);
             }
-            if (maxHP !== undefined && maxHP !== prevMaxHP) {
-                this.itAccess.setCreatureMaxHP(name, maxHP);
-                changed = true;
+            if (effectiveMaxHP !== undefined && effectiveMaxHP !== prevEffMaxHP) {
+                this.itAccess.setCreatureMaxHP(name, effectiveMaxHP);
             }
-            if (ac !== undefined && ac !== prevAC) {
-                this.itAccess.setCreatureAC(name, ac);
-                console.log(`[Bridge] PC AC sync: "${name}" → ${ac}`);
-                changed = true;
+            if (effectiveAC !== undefined && effectiveAC !== prevEffAC) {
+                this.itAccess.setCreatureAC(name, effectiveAC);
+                console.log(`[Bridge] AC sync: "${name}" → ${effectiveAC}`);
             }
         }
     }
