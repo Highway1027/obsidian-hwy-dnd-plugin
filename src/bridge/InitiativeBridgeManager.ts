@@ -822,11 +822,12 @@ export class InitiativeBridgeManager {
 
                 // Auto-disable non-PC creatures at 0 HP (monsters die instantly per D&D 5e)
                 // PCs are NOT auto-disabled — they get death saving throws.
-                // PCs are only disabled when the webapp explicitly moves them to graveyard.
-                if (c.hp <= 0) {
+                // GUARD: Only call setCreatureEnabled if state actually needs to change,
+                // otherwise updateAndSave triggers save-state → re-enters handleITStateChange → infinite loop
+                if (c.hp <= 0 && c.enabled !== false) {
                     this.itAccess.setCreatureEnabled(name, false);
                     console.log(`[Bridge] Auto-disabled "${name}" at 0 HP`);
-                } else if (prev.hp <= 0 && c.hp > 0) {
+                } else if (prev.hp <= 0 && c.hp > 0 && c.enabled !== true) {
                     // Healed back from 0 — re-enable
                     this.itAccess.setCreatureEnabled(name, true);
                     firestoreCombatant.isDead = false;
