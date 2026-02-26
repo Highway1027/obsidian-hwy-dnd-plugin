@@ -524,19 +524,33 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // --- Detect death changes (webapp → Obsidian) ---
+        // --- Detect death/revive changes (webapp → Obsidian) ---
         for (const c of combatants) {
             const prev = c.obsidianId
                 ? prevByObsId.get(c.obsidianId)
                 : prevByName.get(c.name);
 
+            const itName = this.findITCreatureName(c);
+            if (!itName) continue;
+
             if (prev && !prev.isDead && c.isDead) {
+                // Killed in webapp → kill + disable in IT
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                const itName = this.findITCreatureName(c);
-                if (itName) {
-                    this.itAccess.killCreature(itName);
-                    console.log(`[Bridge] Death synced to IT: "${itName}"`);
+                this.itAccess.killCreature(itName);
+                console.log(`[Bridge] Death synced to IT: "${itName}" (disabled)`);
+            } else if (prev && prev.isDead && !c.isDead) {
+                // Revived in webapp → re-enable in IT and set HP
+                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+                this.itAccess.setCreatureEnabled(itName, true);
+                if (c.hp !== undefined) {
+                    this.itAccess.setCreatureHP(itName, c.hp);
                 }
+                console.log(`[Bridge] Revive synced to IT: "${itName}" (re-enabled)`);
+            } else if (!prev && c.isDead) {
+                // First load — combatant already dead, disable in IT
+                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+                this.itAccess.killCreature(itName);
+                console.log(`[Bridge] Already dead on first load: "${itName}" (disabled)`);
             }
         }
     }

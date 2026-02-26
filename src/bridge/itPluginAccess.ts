@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v4 - 26-02-2026 - Added setCreatureFullStats for direct HP/maxHP/AC set, fixed setCreatureMaxHP
+// v5 - 26-02-2026 - Added setCreatureEnabled, killCreature now disables
 
 import { App, Notice } from 'obsidian';
 
@@ -220,13 +220,15 @@ export class ITPluginAccess {
     }
 
     /**
-     * Kill a creature: set HP to 0 and add Unconscious status.
+     * Kill a creature: set HP to 0, add Unconscious status, and disable.
+     * Disabled creatures are skipped during turn advancement.
      */
     killCreature(name: string): boolean {
         const store = this.getTrackerStore();
         if (!store?.updateCreatureByName) return false;
-        // Set HP to 0 and add Unconscious status
         store.updateCreatureByName(name, { hp: 0, status: ['Unconscious'] });
+        // Also disable so IT skips them during turn order (matches webapp graveyard)
+        this.setCreatureEnabled(name, false);
         return true;
     }
 
@@ -317,6 +319,24 @@ export class ITPluginAccess {
         const store = this.getTrackerStore();
         if (!store?.updateCreatureByName) return false;
         store.updateCreatureByName(name, { hidden });
+        return true;
+    }
+
+    /**
+     * Enable or disable a creature. Disabled creatures are skipped during turn order.
+     * Used to sync webapp graveyard behavior with IT plugin.
+     */
+    setCreatureEnabled(name: string, enabled: boolean): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) return false;
+
+        creature.enabled = enabled;
+        store.updateAndSave();
+        console.log(`[ITPluginAccess] ${enabled ? 'Enabled' : 'Disabled'} creature: "${name}"`);
         return true;
     }
 
