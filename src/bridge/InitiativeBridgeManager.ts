@@ -819,6 +819,20 @@ export class InitiativeBridgeManager {
                 }
                 needsFullCombatantUpdate = true;
                 console.log(`[Bridge] HP change: "${name}" → ${c.hp}`);
+
+                // Auto-disable non-PC creatures at 0 HP (monsters die instantly per D&D 5e)
+                // PCs are NOT auto-disabled — they get death saving throws.
+                // PCs are only disabled when the webapp explicitly moves them to graveyard.
+                if (c.hp <= 0) {
+                    this.itAccess.setCreatureEnabled(name, false);
+                    console.log(`[Bridge] Auto-disabled "${name}" at 0 HP`);
+                } else if (prev.hp <= 0 && c.hp > 0) {
+                    // Healed back from 0 — re-enable
+                    this.itAccess.setCreatureEnabled(name, true);
+                    firestoreCombatant.isDead = false;
+                    firestoreCombatant.deathRound = null;
+                    console.log(`[Bridge] Re-enabled "${name}" (healed from 0)`);
+                }
             }
 
             // Hidden flag changed
