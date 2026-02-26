@@ -571,8 +571,10 @@ export class InitiativeBridgeManager {
     private handleFirestoreTurnChange(data: any, combatants: WebappCombatant[]): void {
         const turnIndex = data.turn ?? 0;
 
+        // NOTE: Do NOT filter out dead combatants here!
+        // The webapp's turn index maps into getSortedCombatants() which includes ALL combatants.
+        // Dead ones are only filtered for display, not for turn indexing.
         const sorted = [...combatants]
-            .filter(c => !c.isDead)
             .sort((a, b) => {
                 const initDiff = (b.initiative || 0) - (a.initiative || 0);
                 if (initDiff !== 0) return initDiff;
@@ -852,8 +854,8 @@ export class InitiativeBridgeManager {
             // Turn changed (active creature)
             if (c.active && !prev.active) {
                 // This creature became active — find its turn index
+                // NOTE: Do NOT filter isDead — webapp turn index includes all combatants
                 const activeSorted = [...currentFirestoreCombatants]
-                    .filter(fc => !fc.isDead)
                     .sort((a, b) => {
                         const initDiff = (b.initiative || 0) - (a.initiative || 0);
                         if (initDiff !== 0) return initDiff;
