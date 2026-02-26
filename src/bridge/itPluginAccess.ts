@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v4 - 25-02-2026 - Added setCreatureFullHP for direct HP/maxHP set, fixed setCreatureMaxHP
+// v4 - 26-02-2026 - Added setCreatureFullStats for direct HP/maxHP/AC set, fixed setCreatureMaxHP
 
 import { App, Notice } from 'obsidian';
 

@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v7 - 26-02-2026 - Fix late PC listeners, refresh on combatant change
+// v8 - 26-02-2026 - Summon/wildshape HP sync, late PC listener refresh, external turn sync
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
