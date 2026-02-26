@@ -334,7 +334,9 @@ export class InitiativeBridgeManager {
      * When a character document changes (HP/AC from D&D Beyond), push to Obsidian.
      */
     private handleCharacterDataChange(pcId: string, charData: any, prevData: any): void {
-        if (Date.now() < this.suppressITUntil) return;
+        // NOTE: No suppressITUntil check here — character doc changes are one-directional
+        // (Firestore → IT) so there's no echo loop risk. The suppression was previously
+        // blocking initial PC HP/AC sync because it fires right after PCs are added to IT.
 
         const combatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
 
