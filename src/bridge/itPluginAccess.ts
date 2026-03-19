@@ -201,6 +201,40 @@ export class ITPluginAccess {
         return false;
     }
 
+    /**
+     * Enforces the webapp's calculated sort order onto the IT plugin
+     * by manipulating the IT plugin's native 'manualOrder' property.
+     * 
+     * @param orderedObsidianIds Array of obsidian IDs in the exact desired sort order
+     * @returns boolean indicating if any changes were made
+     */
+    syncCombatantOrder(orderedObsidianIds: string[]): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.getOrderedCreatures || !store?.updateAndSave) return false;
+
+        try {
+            const creatures = store.getOrderedCreatures();
+            let updated = false;
+
+            for (const c of creatures) {
+                const idx = orderedObsidianIds.indexOf(c.id);
+                if (idx !== -1 && c.manualOrder !== idx) {
+                    c.manualOrder = idx;
+                    updated = true;
+                }
+            }
+
+            if (updated) {
+                store.updateAndSave();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error('[ITPluginAccess] Error syncing combatant order:', err);
+            return false;
+        }
+    }
+
     // ==========================================
     // CREATURE UPDATES
     // ==========================================

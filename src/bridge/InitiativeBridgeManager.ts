@@ -576,6 +576,19 @@ export class InitiativeBridgeManager {
                 console.log(`[Bridge] Already dead on first load: "${itName}" (disabled)`);
             }
         }
+
+        // --- Sync Explicit Sort Order (webapp → IT) ---
+        // Force the IT plugin to match the exact mathematical order driven by the webapp
+        const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
+        const obsidianIds = sorted.map(c => c.obsidianId).filter(Boolean) as string[];
+
+        if (obsidianIds.length > 0) {
+            const orderChanged = this.itAccess.syncCombatantOrder(obsidianIds);
+            if (orderChanged) {
+                console.log(`[Bridge] Enforced SortIndex order to IT Plugin`);
+                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+            }
+        }
     }
 
     /**
@@ -598,11 +611,7 @@ export class InitiativeBridgeManager {
         // The webapp's turn index maps into getSortedCombatants() which includes ALL combatants.
         // Dead ones are only filtered for display, not for turn indexing.
         const sorted = [...combatants]
-            .sort((a, b) => {
-                const initDiff = (b.initiative || 0) - (a.initiative || 0);
-                if (initDiff !== 0) return initDiff;
-                return (b.tieBreaker || 0) - (a.tieBreaker || 0);
-            });
+            .sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
 
         if (sorted.length === 0) return;
 

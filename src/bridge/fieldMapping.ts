@@ -27,6 +27,7 @@ export interface WebappCombatant {
     initiative_modifier?: number;
     hasAdvantage?: boolean;
     obsidianId?: string;       // IT creature ID for bridge matching
+    sortIndex?: number;        // Mathematical sort order from the webapp
 }
 
 /**
@@ -113,6 +114,9 @@ export function diffCombatants(
         if (oldC.isDead !== newC.isDead) changes.isDead = newC.isDead;
         if (oldC.isHiddenFromPlayers !== newC.isHiddenFromPlayers) {
             changes.isHiddenFromPlayers = newC.isHiddenFromPlayers;
+        }
+        if (oldC.sortIndex !== newC.sortIndex) {
+            changes.sortIndex = newC.sortIndex;
         }
 
         if (Object.keys(changes).length > 0) {
