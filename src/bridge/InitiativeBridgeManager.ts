@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v9 - 26-02-2026 - Added onStatusChange callback, getStatusInfo for sidebar view
+// v10 - 27-03-2026 - Fixed order desync: sortIndex-based turn calc, direct array reorder, bridgeApplySortIndex
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -13,6 +13,48 @@ import { getDb, isAuthenticated } from '../firebase';
 
 // Suppress echo loops — ignore changes within this window (ms)
 const ECHO_SUPPRESSION_MS = 2000;
+
+/**
+ * Replicates the webapp's getSortedCombatants() 6-step sort.
+ * Must stay in sync with src/components/initiative/combatUtils.js!
+ */
+function bridgeSortCombatants(combatants: WebappCombatant[]): WebappCombatant[] {
+    return [...combatants].sort((a, b) => {
+        // 1. Initiative (Desc)
+        const initDiff = (b.initiative ?? -Infinity) - (a.initiative ?? -Infinity);
+        if (initDiff !== 0) return initDiff;
+        // 2. Dex Modifier (Desc)
+        const modA = a.initiative_modifier ?? 0;
+        const modB = b.initiative_modifier ?? 0;
+        if (modB !== modA) return modB - modA;
+        // 3. Dex Score (Desc)
+        const dexA = (a as any).dexterity_score ?? 10;
+        const dexB = (b as any).dexterity_score ?? 10;
+        if (dexB !== dexA) return dexB - dexA;
+        // 4. Player Priority (Players > NPCs)
+        const isPlayerA = a.type === 'Player Character';
+        const isPlayerB = b.type === 'Player Character';
+        if (isPlayerA !== isPlayerB) return isPlayerA ? -1 : 1;
+        // 5. TieBreaker (Desc)
+        const tieA = a.tieBreaker ?? 0;
+        const tieB = b.tieBreaker ?? 0;
+        if (tieB !== tieA) return tieB - tieA;
+        // 6. Stable fallback by ID
+        return (a.id ?? '').localeCompare(b.id ?? '');
+    });
+}
+
+/**
+ * Stamps sortIndex on every combatant — mirrors the webapp's applySortIndex().
+ */
+function bridgeApplySortIndex(combatants: WebappCombatant[]): WebappCombatant[] {
+    if (!combatants || combatants.length === 0) return [];
+    const sorted = bridgeSortCombatants(combatants);
+    return combatants.map(c => {
+        const idx = sorted.findIndex(sc => sc.id === c.id);
+        return { ...c, sortIndex: Math.max(0, idx) };
+    });
+}
 
 /**
  * Helper: get the "full display name" from an IT Creature object.
@@ -886,13 +928,9 @@ export class InitiativeBridgeManager {
             // Turn changed (active creature)
             if (c.active && !prev.active) {
                 // This creature became active — find its turn index
-                // NOTE: Do NOT filter isDead — webapp turn index includes all combatants
+                // Use sortIndex (matches webapp's exact sort) instead of simplified sort
                 const activeSorted = [...currentFirestoreCombatants]
-                    .sort((a, b) => {
-                        const initDiff = (b.initiative || 0) - (a.initiative || 0);
-                        if (initDiff !== 0) return initDiff;
-                        return (b.tieBreaker || 0) - (a.tieBreaker || 0);
-                    });
+                    .sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
 
                 const turnIndex = activeSorted.findIndex(fc =>
                     fc.obsidianId === id || fc.name === name
@@ -921,7 +959,8 @@ export class InitiativeBridgeManager {
         if (needsFullCombatantUpdate) {
             // Add new monsters (no removal — that's webapp-only)
             let result = [...currentFirestoreCombatants, ...newMonsters];
-            firestoreUpdate.combatants = result;
+            // Apply sortIndex so Firestore↔Obsidian stay consistent
+            firestoreUpdate.combatants = bridgeApplySortIndex(result);
         }
 
         // --- Write to Firestore ---

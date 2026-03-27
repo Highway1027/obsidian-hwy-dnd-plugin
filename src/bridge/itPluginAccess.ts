@@ -203,7 +203,11 @@ export class ITPluginAccess {
 
     /**
      * Enforces the webapp's calculated sort order onto the IT plugin
-     * by manipulating the IT plugin's native 'manualOrder' property.
+     * by directly reordering the tracker store's internal creatures array.
+     * 
+     * The IT plugin's `manualOrder` property is unreliable — it still sorts by
+     * initiative internally. Instead, we directly mutate the `creatures` array
+     * to match the webapp's exact `sortIndex` order.
      * 
      * @param orderedObsidianIds Array of obsidian IDs in the exact desired sort order
      * @returns boolean indicating if any changes were made
@@ -214,21 +218,37 @@ export class ITPluginAccess {
 
         try {
             const creatures = store.getOrderedCreatures();
-            let updated = false;
+            if (creatures.length === 0 || orderedObsidianIds.length === 0) return false;
 
+            // Build a position map: obsidianId → desired index
+            const posMap = new Map<string, number>();
+            orderedObsidianIds.forEach((id, idx) => posMap.set(id, idx));
+
+            // Check if order already matches
+            let alreadyCorrect = true;
+            let lastPos = -1;
             for (const c of creatures) {
-                const idx = orderedObsidianIds.indexOf(c.id);
-                if (idx !== -1 && c.manualOrder !== idx) {
-                    c.manualOrder = idx;
-                    updated = true;
+                const pos = posMap.get(c.id);
+                if (pos !== undefined) {
+                    if (pos <= lastPos) {
+                        alreadyCorrect = false;
+                        break;
+                    }
+                    lastPos = pos;
                 }
             }
+            if (alreadyCorrect) return false;
 
-            if (updated) {
-                store.updateAndSave();
-                return true;
-            }
-            return false;
+            // Sort creatures in-place by their webapp sortIndex position
+            // Creatures not in the map go to the end (preserve relative order)
+            creatures.sort((a: any, b: any) => {
+                const posA = posMap.get(a.id) ?? 99999;
+                const posB = posMap.get(b.id) ?? 99999;
+                return posA - posB;
+            });
+
+            store.updateAndSave();
+            return true;
         } catch (err) {
             console.error('[ITPluginAccess] Error syncing combatant order:', err);
             return false;
