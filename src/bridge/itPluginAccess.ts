@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v5 - 26-02-2026 - Added setCreatureEnabled, killCreature now disables
+// v6 - 27-03-2026 - Replaced `updateCreatureByName` with direct object mutation for reliable numbered NPC sync
 
 import { App, Notice } from 'obsidian';
 
@@ -245,11 +245,14 @@ export class ITPluginAccess {
      */
     setCreatureHP(name: string, hp: number): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) {
-            console.warn('[ITPluginAccess] updateCreatureByName not available');
-            return false;
-        }
-        store.updateCreatureByName(name, { hp });
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) return false;
+
+        creature.hp = hp;
+        store.updateAndSave();
         return true;
     }
 
@@ -259,8 +262,19 @@ export class ITPluginAccess {
      */
     killCreature(name: string): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) return false;
-        store.updateCreatureByName(name, { hp: 0, status: ['Unconscious'] });
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) return false;
+
+        creature.hp = 0;
+        if (!creature.status) creature.status = [];
+        if (!creature.status.includes('Unconscious')) {
+            creature.status.push('Unconscious');
+        }
+        store.updateAndSave();
+
         // Also disable so IT skips them during turn order (matches webapp graveyard)
         this.setCreatureEnabled(name, false);
         return true;
@@ -271,8 +285,15 @@ export class ITPluginAccess {
      */
     setCreatureAC(name: string, ac: number | string): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) return false;
-        store.updateCreatureByName(name, { ac });
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) return false;
+
+        creature.ac = ac;
+        creature.current_ac = ac;
+        store.updateAndSave();
         return true;
     }
 
@@ -327,11 +348,17 @@ export class ITPluginAccess {
      */
     setCreatureInitiative(name: string, initiative: number): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) {
-            console.warn('[ITPluginAccess] updateCreatureByName not available');
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) {
+            console.warn(`[ITPluginAccess] Creature "${name}" not found for initiative`);
             return false;
         }
-        store.updateCreatureByName(name, { initiative });
+
+        creature.initiative = initiative;
+        store.updateAndSave();
         return true;
     }
 
@@ -341,8 +368,17 @@ export class ITPluginAccess {
      */
     addStatusByName(creatureName: string, statusName: string): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) return false;
-        store.updateCreatureByName(creatureName, { status: [statusName] });
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === creatureName || c.name === creatureName);
+        if (!creature) return false;
+
+        if (!creature.status) creature.status = [];
+        if (!creature.status.includes(statusName)) {
+            creature.status.push(statusName);
+        }
+        store.updateAndSave();
         return true;
     }
 
@@ -351,8 +387,14 @@ export class ITPluginAccess {
      */
     setCreatureHidden(name: string, hidden: boolean): boolean {
         const store = this.getTrackerStore();
-        if (!store?.updateCreatureByName) return false;
-        store.updateCreatureByName(name, { hidden });
+        if (!store?.getOrderedCreatures) return false;
+
+        const ordered = store.getOrderedCreatures();
+        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
+        if (!creature) return false;
+
+        creature.hidden = hidden;
+        store.updateAndSave();
         return true;
     }
 
