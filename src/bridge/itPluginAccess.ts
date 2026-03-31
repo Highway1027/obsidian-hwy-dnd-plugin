@@ -202,53 +202,84 @@ export class ITPluginAccess {
     }
 
     /**
-     * Enforces the webapp's calculated sort order onto the IT plugin
-     * by directly reordering the tracker store's internal creatures array.
+     * Enforces the webapp's calculated sort order onto the IT plugin.
      * 
-     * The IT plugin's `manualOrder` property is unreliable — it still sorts by
-     * initiative internally. Instead, we directly mutate the `creatures` array
-     * to match the webapp's exact `sortIndex` order.
+     * The IT plugin's `ordered` derived store sorts by initiative (desc, STABLE).
+     * For creatures with the same initiative, the relative order in the raw
+     * `creatures` Svelte writable store is preserved. So we reorder THAT store
+     * to match the webapp's sortIndex order, and the derived view follows.
      * 
      * @param orderedObsidianIds Array of obsidian IDs in the exact desired sort order
      * @returns boolean indicating if any changes were made
      */
     syncCombatantOrder(orderedObsidianIds: string[]): boolean {
         const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures || !store?.updateAndSave) return false;
+        if (!store?.updateAndSave) return false;
 
         try {
-            const creatures = store.getOrderedCreatures();
-            if (creatures.length === 0 || orderedObsidianIds.length === 0) return false;
+            if (orderedObsidianIds.length === 0) return false;
 
             // Build a position map: obsidianId → desired index
             const posMap = new Map<string, number>();
             orderedObsidianIds.forEach((id, idx) => posMap.set(id, idx));
 
-            // Check if order already matches
-            let alreadyCorrect = true;
-            let lastPos = -1;
-            for (const c of creatures) {
-                const pos = posMap.get(c.id);
-                if (pos !== undefined) {
-                    if (pos <= lastPos) {
-                        alreadyCorrect = false;
-                        break;
+            let changed = false;
+
+            // Strategy 1: Access the raw Svelte `creatures` writable store
+            // The IT plugin exposes tracker.creatures as a Svelte writable<Creature[]>
+            if (store.creatures?.update) {
+                store.creatures.update((list: any[]) => {
+                    // Quick check: is the order already correct?
+                    let lastPos = -1;
+                    let correct = true;
+                    for (const c of list) {
+                        const pos = posMap.get(c.id);
+                        if (pos !== undefined) {
+                            if (pos <= lastPos) { correct = false; break; }
+                            lastPos = pos;
+                        }
                     }
-                    lastPos = pos;
-                }
+                    if (correct) return list;
+
+                    changed = true;
+                    // Sort by webapp's sortIndex (stable sort preserves initiative-based ties)
+                    return [...list].sort((a: any, b: any) => {
+                        const posA = posMap.get(a.id) ?? 99999;
+                        const posB = posMap.get(b.id) ?? 99999;
+                        return posA - posB;
+                    });
+                });
             }
-            if (alreadyCorrect) return false;
+            // Strategy 2: Fallback — try sorting the getOrderedCreatures() array
+            // This works if the IT plugin version exposes creatures as a plain mutable array
+            else if (store.getOrderedCreatures) {
+                const creatures = store.getOrderedCreatures();
+                if (creatures.length === 0) return false;
 
-            // Sort creatures in-place by their webapp sortIndex position
-            // Creatures not in the map go to the end (preserve relative order)
-            creatures.sort((a: any, b: any) => {
-                const posA = posMap.get(a.id) ?? 99999;
-                const posB = posMap.get(b.id) ?? 99999;
-                return posA - posB;
-            });
+                let lastPos = -1;
+                let correct = true;
+                for (const c of creatures) {
+                    const pos = posMap.get(c.id);
+                    if (pos !== undefined) {
+                        if (pos <= lastPos) { correct = false; break; }
+                        lastPos = pos;
+                    }
+                }
+                if (correct) return false;
 
-            store.updateAndSave();
-            return true;
+                changed = true;
+                creatures.sort((a: any, b: any) => {
+                    const posA = posMap.get(a.id) ?? 99999;
+                    const posB = posMap.get(b.id) ?? 99999;
+                    return posA - posB;
+                });
+            }
+
+            if (changed) {
+                store.updateAndSave();
+                console.log('[ITPluginAccess] Reordered creatures store to match webapp sortIndex');
+            }
+            return changed;
         } catch (err) {
             console.error('[ITPluginAccess] Error syncing combatant order:', err);
             return false;
