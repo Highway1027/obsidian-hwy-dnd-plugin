@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v10 - 27-03-2026 - Fixed order desync: sortIndex-based turn calc, direct array reorder, bridgeApplySortIndex
+// v11 - 31-03-2026 - Fixed order sync: manualOrder on ALL creatures, re-apply after add
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -692,6 +692,16 @@ export class InitiativeBridgeManager {
             creature: itCreature,
             initiative: combatant.initiative ?? 0,
         }]);
+
+        // CRITICAL: addCreatures() → rollInitiative() resets manualOrder = null
+        // on the new creature. Re-apply the full order sync so the new creature
+        // gets a proper manualOrder value and doesn't break tie ordering.
+        const allCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
+        const sorted = [...allCombatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
+        const obsidianIds = sorted.map(c => c.obsidianId).filter(Boolean) as string[];
+        if (obsidianIds.length > 0) {
+            this.itAccess.syncCombatantOrder(obsidianIds);
+        }
 
         // After adding, find the IT creature and save its ID back to Firestore
         // This enables reliable matching even after webapp name changes
