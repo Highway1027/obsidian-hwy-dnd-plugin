@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v12 - 31-03-2026 - Enforced Initiative: fake init values (1000-N) for guaranteed order match
+// v13 - 31-03-2026 - Added delayed re-enforcement after new monsters added from IT
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -996,6 +996,27 @@ export class InitiativeBridgeManager {
                 await updateDoc(trackerRef, firestoreUpdate);
             } catch (err) {
                 console.error('[Bridge] Firestore write error:', err);
+            }
+
+            // If new monsters were added, schedule a delayed re-enforcement.
+            // The webapp (source of truth) will auto-heal the sortIndex within ~100ms,
+            // but this bridge ignores Firestore updates during the echo suppression window.
+            // After suppression expires, re-read the latest Firestore state and enforce order.
+            if (newMonsters.length > 0) {
+                setTimeout(async () => {
+                    if (!this._isConnected || !this.caravanId || !this.trackerId) return;
+                    try {
+                        const freshDoc = await getDoc(trackerRef);
+                        if (!freshDoc.exists()) return;
+                        const freshCombatants: WebappCombatant[] = freshDoc.data().combatants || [];
+                        // Store the healed state so future operations use correct sortIndexes
+                        this.lastFirestoreState = freshDoc.data();
+                        this.enforceInitiativeOrder(freshCombatants);
+                        console.log('[Bridge] Delayed re-enforcement after webapp healed sortIndexes');
+                    } catch (err) {
+                        console.error('[Bridge] Delayed re-enforcement failed:', err);
+                    }
+                }, ECHO_SUPPRESSION_MS + 500);
             }
         }
 
