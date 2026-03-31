@@ -602,7 +602,7 @@ export class InitiativeBridgeManager {
      * Real initiative values are managed by the webapp only.
      */
     private enforceInitiativeOrder(combatants: WebappCombatant[]): void {
-        const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
+        const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? 99999) - (b.sortIndex ?? 99999));
         if (sorted.length === 0) return;
 
         const itCreatures = this.itAccess.getOrderedCreatures();
@@ -677,7 +677,7 @@ export class InitiativeBridgeManager {
         // The webapp's turn index maps into getSortedCombatants() which includes ALL combatants.
         // Dead ones are only filtered for display, not for turn indexing.
         const sorted = [...combatants]
-            .sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
+            .sort((a, b) => (a.sortIndex ?? 99999) - (b.sortIndex ?? 99999));
 
         if (sorted.length === 0) return;
 
