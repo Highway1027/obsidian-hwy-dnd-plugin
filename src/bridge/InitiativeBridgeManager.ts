@@ -622,12 +622,35 @@ export class InitiativeBridgeManager {
         // --- Sync Explicit Sort Order (webapp → IT) ---
         // Force the IT plugin to match the exact mathematical order driven by the webapp
         const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
-        const obsidianIds = sorted.map(c => c.obsidianId).filter(Boolean) as string[];
+
+        // Build ordered ID list — resolve ALL combatants to IT creature IDs.
+        // PCs added from the webapp may not have obsidianId yet (assignObsidianId is async),
+        // so fall back to name-based matching against live IT creatures.
+        const itCreatures = this.itAccess.getOrderedCreatures();
+        const obsidianIds: string[] = [];
+        const usedIds = new Set<string>();
+
+        for (const c of sorted) {
+            if (c.obsidianId) {
+                obsidianIds.push(c.obsidianId);
+                usedIds.add(c.obsidianId);
+            } else {
+                // Name-based fallback for combatants without obsidianId yet
+                const match = itCreatures.find((itc: any) =>
+                    !usedIds.has(itc.id) &&
+                    (getCreatureDisplayName(itc) === c.name || itc.name === c.name)
+                );
+                if (match) {
+                    obsidianIds.push(match.id);
+                    usedIds.add(match.id);
+                }
+            }
+        }
 
         if (obsidianIds.length > 0) {
             const orderChanged = this.itAccess.syncCombatantOrder(obsidianIds);
             if (orderChanged) {
-                console.log(`[Bridge] Enforced SortIndex order to IT Plugin`);
+                console.log(`[Bridge] Enforced SortIndex order to IT Plugin (${obsidianIds.length} IDs mapped)`);
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
             }
         }
