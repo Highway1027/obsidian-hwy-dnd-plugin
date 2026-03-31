@@ -1,5 +1,5 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v11 - 31-03-2026 - Fixed order sync: manualOrder on ALL creatures, re-apply after add
+// v12 - 31-03-2026 - Enforced Initiative: fake init values (1000-N) for guaranteed order match
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
@@ -14,47 +14,9 @@ import { getDb, isAuthenticated } from '../firebase';
 // Suppress echo loops — ignore changes within this window (ms)
 const ECHO_SUPPRESSION_MS = 2000;
 
-/**
- * Replicates the webapp's getSortedCombatants() 6-step sort.
- * Must stay in sync with src/components/initiative/combatUtils.js!
- */
-function bridgeSortCombatants(combatants: WebappCombatant[]): WebappCombatant[] {
-    return [...combatants].sort((a, b) => {
-        // 1. Initiative (Desc)
-        const initDiff = (b.initiative ?? -Infinity) - (a.initiative ?? -Infinity);
-        if (initDiff !== 0) return initDiff;
-        // 2. Dex Modifier (Desc)
-        const modA = a.initiative_modifier ?? 0;
-        const modB = b.initiative_modifier ?? 0;
-        if (modB !== modA) return modB - modA;
-        // 3. Dex Score (Desc)
-        const dexA = (a as any).dexterity_score ?? 10;
-        const dexB = (b as any).dexterity_score ?? 10;
-        if (dexB !== dexA) return dexB - dexA;
-        // 4. Player Priority (Players > NPCs)
-        const isPlayerA = a.type === 'Player Character';
-        const isPlayerB = b.type === 'Player Character';
-        if (isPlayerA !== isPlayerB) return isPlayerA ? -1 : 1;
-        // 5. TieBreaker (Desc)
-        const tieA = a.tieBreaker ?? 0;
-        const tieB = b.tieBreaker ?? 0;
-        if (tieB !== tieA) return tieB - tieA;
-        // 6. Stable fallback by ID
-        return (a.id ?? '').localeCompare(b.id ?? '');
-    });
-}
-
-/**
- * Stamps sortIndex on every combatant — mirrors the webapp's applySortIndex().
- */
-function bridgeApplySortIndex(combatants: WebappCombatant[]): WebappCombatant[] {
-    if (!combatants || combatants.length === 0) return [];
-    const sorted = bridgeSortCombatants(combatants);
-    return combatants.map(c => {
-        const idx = sorted.findIndex(sc => sc.id === c.id);
-        return { ...c, sortIndex: Math.max(0, idx) };
-    });
-}
+// No bridgeSortCombatants needed — the webapp is the master.
+// We use "Enforced Initiative" (fake init values) to force the IT plugin
+// to display in the exact order the webapp dictates via sortIndex.
 
 /**
  * Helper: get the "full display name" from an IT Creature object.
@@ -619,40 +581,79 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // --- Sync Explicit Sort Order (webapp → IT) ---
-        // Force the IT plugin to match the exact mathematical order driven by the webapp
-        const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
+        // --- Enforced Initiative: assign fake init values to force IT order ---
+        // The webapp's sortIndex is the source of truth. We assign decreasing
+        // initiative values (1000, 999, 998...) so the IT plugin's own sort
+        // (by initiative descending) produces the exact same order.
+        this.enforceInitiativeOrder(combatants);
+    }
 
-        // Build ordered ID list — resolve ALL combatants to IT creature IDs.
-        // PCs added from the webapp may not have obsidianId yet (assignObsidianId is async),
-        // so fall back to name-based matching against live IT creatures.
+    /**
+     * Enforced Initiative: assign fake initiative values to IT creatures
+     * so the IT plugin's own sort (by initiative descending) produces
+     * the exact same display order as the webapp.
+     * 
+     * Position 0 → initiative 1000
+     * Position 1 → initiative 999
+     * Position 2 → initiative 998
+     * ... and so on.
+     * 
+     * This replaces all previous manualOrder / array-reorder approaches.
+     * Real initiative values are managed by the webapp only.
+     */
+    private enforceInitiativeOrder(combatants: WebappCombatant[]): void {
+        const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
+        if (sorted.length === 0) return;
+
         const itCreatures = this.itAccess.getOrderedCreatures();
-        const obsidianIds: string[] = [];
+        if (itCreatures.length === 0) return;
+
+        let changed = false;
         const usedIds = new Set<string>();
 
-        for (const c of sorted) {
+        for (let i = 0; i < sorted.length; i++) {
+            const c = sorted[i];
+            const fakeInit = 1000 - i;
+
+            // Find the IT creature — by obsidianId first, then by name
+            let itCreature: any = null;
             if (c.obsidianId) {
-                obsidianIds.push(c.obsidianId);
-                usedIds.add(c.obsidianId);
-            } else {
-                // Name-based fallback for combatants without obsidianId yet
-                const match = itCreatures.find((itc: any) =>
+                itCreature = itCreatures.find((itc: any) => itc.id === c.obsidianId);
+            }
+            if (!itCreature) {
+                itCreature = itCreatures.find((itc: any) =>
                     !usedIds.has(itc.id) &&
                     (getCreatureDisplayName(itc) === c.name || itc.name === c.name)
                 );
-                if (match) {
-                    obsidianIds.push(match.id);
-                    usedIds.add(match.id);
+            }
+
+            if (itCreature) {
+                usedIds.add(itCreature.id);
+                if (itCreature.initiative !== fakeInit) {
+                    itCreature.initiative = fakeInit;
+                    changed = true;
                 }
             }
         }
 
-        if (obsidianIds.length > 0) {
-            const orderChanged = this.itAccess.syncCombatantOrder(obsidianIds);
-            if (orderChanged) {
-                console.log(`[Bridge] Enforced SortIndex order to IT Plugin (${obsidianIds.length} IDs mapped)`);
-                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+        // Also set any IT creatures NOT in the webapp list to very low initiative
+        for (const itc of itCreatures) {
+            if (!usedIds.has(itc.id)) {
+                const lowInit = -100;
+                if (itc.initiative !== lowInit) {
+                    itc.initiative = lowInit;
+                    changed = true;
+                }
             }
+        }
+
+        if (changed) {
+            // Save and suppress echo — these fake values should NOT sync back
+            this.itAccess.triggerSave();
+            this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+            // Re-snapshot so the fake values become the baseline
+            this.snapshotITState();
+            console.log(`[Bridge] Enforced initiative order (${sorted.length} creatures)`);
         }
     }
 
@@ -716,18 +717,12 @@ export class InitiativeBridgeManager {
             initiative: combatant.initiative ?? 0,
         }]);
 
-        // CRITICAL: addCreatures() → rollInitiative() resets manualOrder = null
-        // on the new creature. Re-apply the full order sync so the new creature
-        // gets a proper manualOrder value and doesn't break tie ordering.
+        // Re-apply enforced initiative order so the new creature gets
+        // the correct fake initiative value and slots into position.
         const allCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
-        const sorted = [...allCombatants].sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
-        const obsidianIds = sorted.map(c => c.obsidianId).filter(Boolean) as string[];
-        if (obsidianIds.length > 0) {
-            this.itAccess.syncCombatantOrder(obsidianIds);
-        }
+        this.enforceInitiativeOrder(allCombatants);
 
         // After adding, find the IT creature and save its ID back to Firestore
-        // This enables reliable matching even after webapp name changes
         if (!combatant.obsidianId) {
             this.assignObsidianId(combatant);
         }
@@ -951,12 +946,10 @@ export class InitiativeBridgeManager {
                 needsFullCombatantUpdate = true;
             }
 
-            // Initiative changed
-            if (c.initiative !== prev.initiative) {
-                firestoreCombatant.initiative = c.initiative;
-                needsFullCombatantUpdate = true;
-                console.log(`[Bridge] Initiative change: "${name}" → ${c.initiative}`);
-            }
+            // Initiative changed — SKIP sync from IT→Firestore.
+            // We use fake initiative values (1000-N) in IT to enforce order.
+            // Real initiative is managed exclusively by the webapp.
+            // (No code needed — intentionally suppressed)
 
             // Turn changed (active creature)
             if (c.active && !prev.active) {
@@ -993,7 +986,7 @@ export class InitiativeBridgeManager {
             // Add new monsters (no removal — that's webapp-only)
             let result = [...currentFirestoreCombatants, ...newMonsters];
             // Apply sortIndex so Firestore↔Obsidian stay consistent
-            firestoreUpdate.combatants = bridgeApplySortIndex(result);
+            firestoreUpdate.combatants = result;
         }
 
         // --- Write to Firestore ---

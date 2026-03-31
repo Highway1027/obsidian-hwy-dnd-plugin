@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v7 - 31-03-2026 - Correct manualOrder-based order sync from IT plugin source analysis
+// v8 - 31-03-2026 - Added triggerSave() for enforced initiative, removed diagnostic logging
 
 import { App, Notice } from 'obsidian';
 
@@ -589,5 +589,16 @@ export class ITPluginAccess {
             console.error('[ITPluginAccess] newEncounter error:', err);
             return false;
         }
+    }
+
+    /**
+     * Trigger a save on the tracker store.
+     * Used by the bridge to persist direct creature mutations (e.g., enforced initiative).
+     */
+    triggerSave(): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateAndSave) return false;
+        store.updateAndSave();
+        return true;
     }
 }
