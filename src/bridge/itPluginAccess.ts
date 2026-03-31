@@ -233,6 +233,13 @@ export class ITPluginAccess {
             const creatures = store.getOrderedCreatures();
             if (creatures.length === 0) return false;
 
+            // --- DIAGNOSTIC: Log before state ---
+            console.log(`[ITPluginAccess] syncCombatantOrder called with ${orderedObsidianIds.length} IDs, found ${creatures.length} creatures`);
+            for (const c of creatures) {
+                const name = c.getName?.() ?? c.name;
+                console.log(`  [BEFORE] "${name}" id=${c.id} init=${c.initiative} manualOrder=${c.manualOrder} (type: ${typeof c.manualOrder})`);
+            }
+
             let changed = false;
             const unmappedBase = orderedObsidianIds.length;
 
@@ -250,9 +257,24 @@ export class ITPluginAccess {
                 }
             }
 
+            // --- DIAGNOSTIC: Log after state ---
             if (changed) {
+                console.log('[ITPluginAccess] manualOrder CHANGED. After:');
+                for (const c of creatures) {
+                    const name = c.getName?.() ?? c.name;
+                    console.log(`  [AFTER] "${name}" id=${c.id} manualOrder=${c.manualOrder} (type: ${typeof c.manualOrder})`);
+                }
                 store.updateAndSave();
-                console.log('[ITPluginAccess] Set manualOrder on all creatures for order sync');
+
+                // Verify: re-read ordered creatures after save
+                const afterCreatures = store.getOrderedCreatures();
+                console.log('[ITPluginAccess] Order AFTER updateAndSave:');
+                for (const c of afterCreatures) {
+                    const name = c.getName?.() ?? c.name;
+                    console.log(`  [VERIFY] "${name}" init=${c.initiative} manualOrder=${c.manualOrder}`);
+                }
+            } else {
+                console.log('[ITPluginAccess] manualOrder already correct, no change needed');
             }
             return changed;
         } catch (err) {
