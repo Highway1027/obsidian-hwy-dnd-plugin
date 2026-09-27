@@ -1,7 +1,7 @@
 // src/bridge/itPluginAccess.ts
-// v8 - 31-03-2026 - Added triggerSave() for enforced initiative, removed diagnostic logging
+// v9 - 27-09-2026 - Creatures found by IT id first (then name); statuses use IT's Set of conditions; unused order helper removed
 
-import { App, Notice } from 'obsidian';
+import { App } from 'obsidian';
 
 /**
  * CreatureState matches the IT plugin's internal CreatureState interface.
@@ -52,6 +52,9 @@ export interface ITViewState {
     timestamp?: number;
 }
 
+/** IT's view type for the tracker itself (not the statblock pane). */
+export const IT_TRACKER_VIEW_TYPE = 'initiative-tracker-view';
+
 /**
  * Provides access to the IT plugin's internal tracker store and API.
  *
@@ -60,15 +63,8 @@ export interface ITViewState {
  *   window.InitiativeTracker.plugin   → InitiativeTracker plugin instance
  *   window.InitiativeTracker.plugin.tracker → Svelte store with all methods
  *
- * The tracker store exposes:
- *   - goToNext() / goToPrevious()   → turn advancement
- *   - updateCreatures({creature, change}) → update HP, initiative, status, etc.
- *   - updateCreatureByName(name, change) → same but by name lookup
- *   - add(plugin, roll, ...creatures) → add creatures (with optional roll)
- *   - remove(...creatures) → remove creatures
- *   - getOrderedCreatures() → get sorted creature array
- *   - ordered → Svelte derived store of ordered creatures
- *   - new(plugin, state?) → start new encounter
+ * Every setter takes a creature key: the IT creature id (preferred, stable while
+ * Obsidian runs) or its display name ("Goblin 2") as a fallback.
  */
 export class ITPluginAccess {
     private app: App;
@@ -77,391 +73,170 @@ export class ITPluginAccess {
         this.app = app;
     }
 
-    /**
-     * Get the IT plugin's API (window.InitiativeTracker).
-     */
     private getAPI(): any | null {
         return (window as any).InitiativeTracker ?? null;
     }
 
-    /**
-     * Get the IT plugin instance.
-     */
     private getPlugin(): any | null {
         return this.getAPI()?.plugin ?? null;
     }
 
-    /**
-     * Get the tracker Svelte store with all internal methods.
-     */
     private getTrackerStore(): any | null {
         return this.getPlugin()?.tracker ?? null;
     }
 
-    /**
-     * Check if the IT plugin is available and loaded.
-     */
+    /** Check if the IT plugin is available and loaded. */
     isAvailable(): boolean {
         return this.getTrackerStore() !== null;
+    }
+
+    /** Find a live creature by IT id, then display name, then base name. */
+    findCreature(key: string): any | null {
+        const ordered: any[] = this.getOrderedCreatures();
+        return ordered.find(c => c.id === key)
+            ?? ordered.find(c => c.getName?.() === key)
+            ?? ordered.find(c => c.name === key)
+            ?? null;
+    }
+
+    private updateCreature(key: string, apply: (creature: any) => void): boolean {
+        const store = this.getTrackerStore();
+        if (!store?.updateAndSave) return false;
+        const creature = this.findCreature(key);
+        if (!creature) {
+            console.warn(`[ITPluginAccess] Creature "${key}" not found`);
+            return false;
+        }
+        apply(creature);
+        store.updateAndSave();
+        return true;
     }
 
     // ==========================================
     // TURN MANAGEMENT
     // ==========================================
 
-    /**
-     * Advance to the next turn. Uses tracker.goToNext() which
-     * handles round increment, status reset, and triggers save-state.
-     */
-    goToNext(): boolean {
+    /** Make one creature the active turn. */
+    setActiveTurn(key: string): boolean {
         const store = this.getTrackerStore();
-        if (!store?.goToNext) {
-            console.warn('[ITPluginAccess] goToNext not available');
+        if (!store?.updateAndSave) return this.advanceToCreature(key);
+
+        const target = this.findCreature(key);
+        if (!target) {
+            console.warn(`[ITPluginAccess] Creature "${key}" not found`);
             return false;
         }
-        store.goToNext();
+        for (const creature of this.getOrderedCreatures()) {
+            creature.active = creature === target;
+        }
+        store.updateAndSave();
         return true;
     }
 
-    /**
-     * Go to the previous turn.
-     */
-    goToPrevious(): boolean {
+    /** Advance turns until we reach the target creature (fallback without updateAndSave). */
+    private advanceToCreature(key: string, maxSteps: number = 30): boolean {
         const store = this.getTrackerStore();
-        if (!store?.goToPrevious) {
-            console.warn('[ITPluginAccess] goToPrevious not available');
-            return false;
-        }
-        store.goToPrevious();
-        return true;
-    }
-
-    /**
-     * Set a specific creature as the active one by name.
-     * Uses updateAndSave to directly manipulate active flags.
-     */
-    setActiveTurn(targetName: string): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.updateAndSave) {
-            // Fallback: advance until we reach the target
-            return this.advanceToCreature(targetName);
-        }
-
-        try {
-            // Get ordered creatures to find the target
-            const ordered = store.getOrderedCreatures?.() ?? [];
-            const target = ordered.find((c: any) => c.getName?.() === targetName || c.name === targetName);
-            if (!target) {
-                console.warn(`[ITPluginAccess] Creature "${targetName}" not found`);
-                return false;
-            }
-
-            // Use updateCreatures to set active flags
-            const updates: { creature: any; change: any }[] = [];
-            for (const creature of ordered) {
-                if (creature === target) {
-                    if (!creature.active) {
-                        updates.push({ creature, change: {} }); // Trigger save
-                        creature.active = true;
-                    }
-                } else {
-                    if (creature.active) {
-                        creature.active = false;
-                    }
-                }
-            }
-
-            // Trigger save
-            store.updateAndSave();
-            return true;
-        } catch (err) {
-            console.error('[ITPluginAccess] setActiveTurn error:', err);
-            return false;
-        }
-    }
-
-    /**
-     * Advance turns until we reach the target creature.
-     * Safety limit prevents infinite loops.
-     */
-    private advanceToCreature(targetName: string, maxSteps: number = 30): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.goToNext || !store?.getOrderedCreatures) return false;
+        const target = this.findCreature(key);
+        if (!store?.goToNext || !target) return false;
 
         for (let i = 0; i < maxSteps; i++) {
-            const ordered = store.getOrderedCreatures();
-            const active = ordered.find((c: any) => c.active);
-            if (active && (active.getName?.() === targetName || active.name === targetName)) {
-                return true; // We've reached the target
-            }
+            if (this.getOrderedCreatures().find((c: any) => c.active) === target) return true;
             store.goToNext();
         }
-
-        console.warn(`[ITPluginAccess] Could not reach "${targetName}" in ${maxSteps} steps`);
+        console.warn(`[ITPluginAccess] Could not reach "${key}" in ${maxSteps} steps`);
         return false;
-    }
-
-    /**
-     * Enforces the webapp's calculated sort order onto the IT plugin
-     * using the `manualOrder` property on each Creature object.
-     * 
-     * From the IT plugin source (tracker.ts), the sort for ties is:
-     * 1. If BOTH creatures have non-null manualOrder → sort by manualOrder
-     * 2. Otherwise → fall through to resolveTies setting
-     * 
-     * CRITICAL: `manualOrder` must be set on EVERY creature (never null),
-     * because the IT plugin only uses it when BOTH have non-null values.
-     * `addCreatures()` → `rollInitiative()` resets `manualOrder = null`,
-     * so we must re-apply after every add.
-     * 
-     * @param orderedObsidianIds Array of obsidian IDs in the exact desired sort order
-     * @returns boolean indicating if any changes were made
-     */
-    syncCombatantOrder(orderedObsidianIds: string[]): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures || !store?.updateAndSave) return false;
-
-        try {
-            if (orderedObsidianIds.length === 0) return false;
-
-            // Build a position map: obsidianId → desired index
-            const posMap = new Map<string, number>();
-            orderedObsidianIds.forEach((id, idx) => posMap.set(id, idx));
-
-            // getOrderedCreatures() returns Creature object references —
-            // mutating them DOES persist (same objects the store holds)
-            const creatures = store.getOrderedCreatures();
-            if (creatures.length === 0) return false;
-
-            // --- DIAGNOSTIC: Log before state ---
-            console.log(`[ITPluginAccess] syncCombatantOrder called with ${orderedObsidianIds.length} IDs, found ${creatures.length} creatures`);
-            for (const c of creatures) {
-                const name = c.getName?.() ?? c.name;
-                console.log(`  [BEFORE] "${name}" id=${c.id} init=${c.initiative} manualOrder=${c.manualOrder} (type: ${typeof c.manualOrder})`);
-            }
-
-            let changed = false;
-            const unmappedBase = orderedObsidianIds.length;
-
-            for (let i = 0; i < creatures.length; i++) {
-                const c = creatures[i];
-                // Creatures in the map get their webapp sortIndex position
-                // Creatures NOT in the map get a high value (preserves relative order)
-                const desiredOrder = posMap.has(c.id)
-                    ? posMap.get(c.id)!
-                    : unmappedBase + i;
-
-                if (c.manualOrder !== desiredOrder) {
-                    c.manualOrder = desiredOrder;
-                    changed = true;
-                }
-            }
-
-            // --- DIAGNOSTIC: Log after state ---
-            if (changed) {
-                console.log('[ITPluginAccess] manualOrder CHANGED. After:');
-                for (const c of creatures) {
-                    const name = c.getName?.() ?? c.name;
-                    console.log(`  [AFTER] "${name}" id=${c.id} manualOrder=${c.manualOrder} (type: ${typeof c.manualOrder})`);
-                }
-                store.updateAndSave();
-
-                // Verify: re-read ordered creatures after save
-                const afterCreatures = store.getOrderedCreatures();
-                console.log('[ITPluginAccess] Order AFTER updateAndSave:');
-                for (const c of afterCreatures) {
-                    const name = c.getName?.() ?? c.name;
-                    console.log(`  [VERIFY] "${name}" init=${c.initiative} manualOrder=${c.manualOrder}`);
-                }
-            } else {
-                console.log('[ITPluginAccess] manualOrder already correct, no change needed');
-            }
-            return changed;
-        } catch (err) {
-            console.error('[ITPluginAccess] Error syncing combatant order:', err);
-            return false;
-        }
     }
 
     // ==========================================
     // CREATURE UPDATES
     // ==========================================
 
-    /**
-     * Update a creature's HP by directly setting it.
-     * updateCreatureByName uses {hp: val} for direct set.
-     */
-    setCreatureHP(name: string, hp: number): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) return false;
-
-        creature.hp = hp;
-        store.updateAndSave();
-        return true;
+    setCreatureHP(key: string, hp: number): boolean {
+        return this.updateCreature(key, c => { c.hp = hp; });
     }
 
     /**
-     * Kill a creature: set HP to 0, add Unconscious status, and disable.
-     * Disabled creatures are skipped during turn advancement.
+     * Kill a creature: disable it first (so IT skips its turn even if the
+     * status update fails), set HP to 0 and add the Unconscious condition.
      */
-    killCreature(name: string): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
+    killCreature(key: string): boolean {
+        this.setCreatureEnabled(key, false);
+        return this.updateCreature(key, c => {
+            c.hp = 0;
+            this.addCondition(c, 'Unconscious');
+        });
+    }
 
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) return false;
+    setCreatureAC(key: string, ac: number | string): boolean {
+        return this.updateCreature(key, c => {
+            c.ac = ac;
+            c.current_ac = ac;
+        });
+    }
 
-        creature.hp = 0;
-        if (!creature.status) creature.status = [];
-        if (!creature.status.includes('Unconscious')) {
-            creature.status.push('Unconscious');
+    /** Set max HP (absolute). IT's own `max` change is a delta, so we set the fields directly. */
+    setCreatureMaxHP(key: string, maxHp: number): boolean {
+        return this.updateCreature(key, c => {
+            c.max = maxHp;
+            c.current_max = maxHp;
+            if (c.hp > maxHp) c.hp = maxHp;
+        });
+    }
+
+    /** Set HP, max HP and AC at once (initial PC setup). */
+    setCreatureFullStats(key: string, hp: number, maxHp: number, ac?: number | string): boolean {
+        return this.updateCreature(key, c => {
+            c.hp = hp;
+            c.max = maxHp;
+            c.current_max = maxHp;
+            if (ac !== undefined) {
+                c.ac = ac;
+                c.current_ac = ac;
+            }
+        });
+    }
+
+    setCreatureInitiative(key: string, initiative: number): boolean {
+        return this.updateCreature(key, c => { c.initiative = initiative; });
+    }
+
+    /** Add a condition by name. IT stores conditions as a Set of {name, id, description}. */
+    addStatusByName(key: string, statusName: string): boolean {
+        return this.updateCreature(key, c => this.addCondition(c, statusName));
+    }
+
+    private addCondition(creature: any, statusName: string): void {
+        const status = creature.status;
+        if (status instanceof Set) {
+            if ([...status].some((s: any) => s?.name === statusName)) return;
+            const condition = this.findConfiguredCondition(statusName)
+                ?? { name: statusName, id: statusName.toLowerCase(), description: null };
+            if (typeof creature.addCondition === 'function') {
+                creature.addCondition(condition);
+            } else {
+                status.add(condition);
+            }
+        } else if (Array.isArray(status)) {
+            // Older IT versions stored plain names.
+            if (!status.includes(statusName)) status.push(statusName);
+        } else {
+            creature.status = new Set([{ name: statusName, id: statusName.toLowerCase(), description: null }]);
         }
-        store.updateAndSave();
-
-        // Also disable so IT skips them during turn order (matches webapp graveyard)
-        this.setCreatureEnabled(name, false);
-        return true;
     }
 
-    /**
-     * Set a creature's AC value.
-     */
-    setCreatureAC(name: string, ac: number | string): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) return false;
-
-        creature.ac = ac;
-        creature.current_ac = ac;
-        store.updateAndSave();
-        return true;
+    /** IT's configured condition with this name (keeps its description and id), if any. */
+    private findConfiguredCondition(statusName: string): any | null {
+        const statuses: any[] = this.getPlugin()?.data?.statuses ?? [];
+        return statuses.find(s => s?.name === statusName) ?? null;
     }
 
-    /**
-     * Set a creature's max HP (absolute, not delta).
-     * updateCreatureByName's `max` is a DELTA, so we directly manipulate the creature.
-     */
-    setCreatureMaxHP(name: string, maxHp: number): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) return false;
-
-        creature.max = maxHp;
-        creature.current_max = maxHp;
-        if (creature.hp > maxHp) creature.hp = maxHp;
-        store.updateAndSave();
-        return true;
+    setCreatureHidden(key: string, hidden: boolean): boolean {
+        return this.updateCreature(key, c => { c.hidden = hidden; });
     }
 
-    /**
-     * Set HP, maxHP, and AC all at once.
-     * Used for initial PC setup where the creature was created with hp=0.
-     */
-    setCreatureFullStats(name: string, hp: number, maxHp: number, ac?: number | string): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) {
-            console.warn(`[ITPluginAccess] Creature "${name}" not found for full stats`);
-            return false;
-        }
-
-        creature.hp = hp;
-        creature.max = maxHp;
-        creature.current_max = maxHp;
-        if (ac !== undefined) {
-            creature.ac = ac;
-            creature.current_ac = ac;
-        }
-        store.updateAndSave();
-        console.log(`[ITPluginAccess] Full stats set for "${name}": ${hp}/${maxHp} AC:${ac}`);
-        return true;
-    }
-
-    /**
-     * Set a creature's initiative value.
-     */
-    setCreatureInitiative(name: string, initiative: number): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) {
-            console.warn(`[ITPluginAccess] Creature "${name}" not found for initiative`);
-            return false;
-        }
-
-        creature.initiative = initiative;
-        store.updateAndSave();
-        return true;
-    }
-
-    /**
-     * Add a status condition to a creature by name.
-     * The IT plugin resolves status names from its configured statuses list.
-     */
-    addStatusByName(creatureName: string, statusName: string): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === creatureName || c.name === creatureName);
-        if (!creature) return false;
-
-        if (!creature.status) creature.status = [];
-        if (!creature.status.includes(statusName)) {
-            creature.status.push(statusName);
-        }
-        store.updateAndSave();
-        return true;
-    }
-
-    /**
-     * Set creature's hidden flag.
-     */
-    setCreatureHidden(name: string, hidden: boolean): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) return false;
-
-        creature.hidden = hidden;
-        store.updateAndSave();
-        return true;
-    }
-
-    /**
-     * Enable or disable a creature. Disabled creatures are skipped during turn order.
-     * Used to sync webapp graveyard behavior with IT plugin.
-     */
-    setCreatureEnabled(name: string, enabled: boolean): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) => c.getName?.() === name || c.name === name);
-        if (!creature) return false;
-
-        creature.enabled = enabled;
-        store.updateAndSave();
-        console.log(`[ITPluginAccess] ${enabled ? 'Enabled' : 'Disabled'} creature: "${name}"`);
-        return true;
+    /** Enable or disable a creature. Disabled creatures are skipped during turn order. */
+    setCreatureEnabled(key: string, enabled: boolean): boolean {
+        return this.updateCreature(key, c => { c.enabled = enabled; });
     }
 
     // ==========================================
@@ -471,7 +246,6 @@ export class ITPluginAccess {
     /**
      * Add creatures using the public API.
      * NOTE: This calls rollInitiative() internally on the added creatures.
-     * If you need to set specific initiative values, call setCreatureInitiative() after.
      */
     addCreatures(creatures: any[]): boolean {
         const api = this.getAPI();
@@ -489,40 +263,25 @@ export class ITPluginAccess {
     }
 
     /**
-     * Add creatures and then immediately set their initiative values.
-     * Solves the problem of addCreatures() rolling random initiative.
+     * Add one creature, set its initiative, and return its new IT id
+     * (found by diffing ids, so creatures with the same name can't be confused).
      */
-    addCreaturesWithInitiative(creatures: { creature: any; initiative: number }[]): boolean {
-        // First add all creatures (they'll get random initiative)
-        const added = this.addCreatures(creatures.map(c => c.creature));
-        if (!added) return false;
-
-        // Then immediately correct their initiative values
-        for (const { creature, initiative } of creatures) {
-            if (initiative !== undefined && initiative !== null) {
-                this.setCreatureInitiative(creature.name, initiative);
-            }
-        }
-        return true;
+    addCreatureWithInitiative(creature: any, initiative: number): string | null {
+        const before = new Set(this.getOrderedCreatures().map((c: any) => c.id));
+        if (!this.addCreatures([creature])) return null;
+        const added = this.getOrderedCreatures().find((c: any) => !before.has(c.id));
+        if (!added) return null;
+        this.setCreatureInitiative(added.id, initiative);
+        return added.id as string;
     }
 
-    /**
-     * Remove a creature by name from the tracker.
-     */
-    removeCreatureByName(name: string): boolean {
+    removeCreature(key: string): boolean {
         const store = this.getTrackerStore();
-        if (!store?.getOrderedCreatures || !store?.remove) return false;
-
-        const ordered = store.getOrderedCreatures();
-        const creature = ordered.find((c: any) =>
-            c.getName?.() === name || c.name === name
-        );
-
-        if (!creature) {
-            console.warn(`[ITPluginAccess] Creature "${name}" not found for removal`);
+        const creature = this.findCreature(key);
+        if (!store?.remove || !creature) {
+            console.warn(`[ITPluginAccess] Creature "${key}" not found for removal`);
             return false;
         }
-
         store.remove(creature);
         return true;
     }
@@ -531,64 +290,16 @@ export class ITPluginAccess {
     // STATE READING
     // ==========================================
 
-    /**
-     * Get the ordered list of creatures in the current encounter.
-     */
+    /** Get the ordered list of live creatures in the current encounter. */
     getOrderedCreatures(): any[] {
         const store = this.getTrackerStore();
         if (!store?.getOrderedCreatures) return [];
         return store.getOrderedCreatures();
     }
 
-    /**
-     * Get the currently active creature.
-     */
-    getActiveCreature(): any | null {
-        const ordered = this.getOrderedCreatures();
-        return ordered.find((c: any) => c.active) ?? null;
-    }
-
-    /**
-     * Get the current round number.
-     */
-    getCurrentRound(): number {
-        const store = this.getTrackerStore();
-        if (!store?.round) return 1;
-        // Svelte store - need to use get()
-        try {
-            // Try to read from the store directly
-            let round = 1;
-            const unsub = store.round.subscribe?.((val: number) => { round = val; });
-            unsub?.();
-            return round;
-        } catch {
-            return 1;
-        }
-    }
-
-    /**
-     * Check if combat has been started (play button pressed).
-     */
-    isCombatStarted(): boolean {
-        const store = this.getTrackerStore();
-        if (!store?.getState) return false;
-        return store.getState();
-    }
-
-    /**
-     * Start a new encounter via the public API.
-     * This will replace the current encounter.
-     */
-    newEncounter(state?: ITViewState): boolean {
-        const api = this.getAPI();
-        if (!api?.newEncounter) return false;
-        try {
-            api.newEncounter(state);
-            return true;
-        } catch (err) {
-            console.error('[ITPluginAccess] newEncounter error:', err);
-            return false;
-        }
+    /** Is an Initiative Tracker view open anywhere in the workspace? */
+    isTrackerViewOpen(): boolean {
+        return this.app.workspace.getLeavesOfType(IT_TRACKER_VIEW_TYPE).length > 0;
     }
 
     /**

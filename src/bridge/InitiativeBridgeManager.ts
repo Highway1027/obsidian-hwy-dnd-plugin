@@ -1,18 +1,22 @@
 // src/bridge/InitiativeBridgeManager.ts
-// v13 - 31-03-2026 - Added delayed re-enforcement after new monsters added from IT
+// v14 - 27-09-2026 - Link pass on connect (no duplicate PCs after restart), IT players auto-linked to caravan PCs,
+//                    creatures addressed by IT id, new-encounter and tracker-close detection, tracker ownerUid
 
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
 import { itCreatureToWebappCombatant, webappCombatantToITCreature, type WebappCombatant } from './fieldMapping';
+import { planLinks, matchCaravanPc, buildPcCombatant, type CaravanPc, type ItCreatureRef } from './linking';
 import {
     doc, getDoc, setDoc, updateDoc, collection,
     onSnapshot, getDocs, serverTimestamp,
     type Unsubscribe
 } from '../firebase';
-import { getDb, isAuthenticated } from '../firebase';
+import { getDb, getCurrentUser } from '../firebase';
 
 // Suppress echo loops — ignore changes within this window (ms)
 const ECHO_SUPPRESSION_MS = 2000;
+// Wait this long after a layout change before deciding the tracker view is really closed.
+const TRACKER_CLOSE_GRACE_MS = 1500;
 
 // No bridgeSortCombatants needed — the webapp is the master.
 // We use "Enforced Initiative" (fake init values) to force the IT plugin
@@ -31,12 +35,35 @@ function getCreatureDisplayName(creature: any): string {
     return creature.display || creature.name;
 }
 
+function toCreatureRef(creature: any): ItCreatureRef {
+    const modifier = Array.isArray(creature.modifier) ? creature.modifier[0] : creature.modifier;
+    return {
+        id: creature.id,
+        name: creature.name,
+        displayName: getCreatureDisplayName(creature),
+        player: creature.player === true,
+        initiative: creature.initiative,
+        modifier: typeof modifier === 'number' ? modifier : 0,
+    };
+}
+
+/** Webapp combatant for an IT monster/ally (players go through the caravan link instead). */
+function monsterCombatantFromIT(creature: any): WebappCombatant {
+    const state = creature.toJSON ? creature.toJSON() as ITCreatureState : creature;
+    const combatant = itCreatureToWebappCombatant(state);
+    combatant.name = getCreatureDisplayName(creature); // Full name with number
+    combatant.id = `obs_${state.id}_${Date.now()}`;
+    combatant.obsidianId = state.id;
+    return combatant;
+}
+
 /**
  * Core orchestrator for bidirectional sync between the IT plugin and Firestore.
  *
  * Matching strategy: Each Firestore combatant stores `obsidianId` which maps to
- * the IT creature's `id` field. This provides stable matching even when multiple
- * creatures share the same base name (e.g. "Goblin 1", "Goblin 2").
+ * the IT creature's `id` field. IT gives players a new id whenever Obsidian
+ * restarts, so every connect runs a link pass (linking.ts) that repairs stale ids
+ * by name before any sync happens.
  */
 export class InitiativeBridgeManager {
     private app: App;
@@ -49,6 +76,7 @@ export class InitiativeBridgeManager {
     private firestoreUnsubscribe: Unsubscribe | null = null;
     private characterUnsubscribes: Unsubscribe[] = [];
     private itEventRefs: any[] = [];
+    private trackerCloseTimer: number | null = null;
 
     // Echo loop prevention
     private suppressFirestoreUntil: number = 0;
@@ -59,11 +87,15 @@ export class InitiativeBridgeManager {
     private lastFirestoreState: any = null;
     private lastITCreatureIds: Set<string> = new Set();
     // Map from IT creature.id → last known state
-    private lastITCreatureMap: Map<string, { name: string; hp: number; initiative: number; hidden: boolean; active: boolean }> = new Map();
+    private lastITCreatureMap: Map<string, { name: string; hp: number; initiative: number; hidden: boolean; active: boolean; player: boolean }> = new Map();
 
     // PC character data cache (from Firestore character docs)
     private pcCharacterData: Map<string, any> = new Map();
     private monitoredPcIds: Set<string> = new Set();
+
+    // Caravan player characters, for linking IT players to webapp PCs
+    private caravanPcs: CaravanPc[] = [];
+    private warnedUnlinkedPlayers: Set<string> = new Set();
 
     // Status change callback for UI components (status bar, sidebar)
     public onStatusChange: ((connected: boolean, info?: { trackerName?: string; caravanId?: string }) => void) | null = null;
@@ -112,41 +144,83 @@ export class InitiativeBridgeManager {
         }));
     }
 
+    /** Load the caravan's player characters (name + character id) for linking. */
+    private async loadCaravanPcs(caravanId: string): Promise<CaravanPc[]> {
+        try {
+            const snap = await getDoc(doc(getDb(), 'caravans', caravanId));
+            const members: any[] = snap.exists() ? (snap.data().characterMembers || []) : [];
+            this.caravanPcs = members
+                .filter(m => m?.characterId && m?.name)
+                .map(m => ({ characterId: m.characterId, name: m.name }));
+        } catch (err) {
+            console.error('[Bridge] Could not load caravan characters:', err);
+            this.caravanPcs = [];
+        }
+        return this.caravanPcs;
+    }
+
+    private noticeUnlinkedPlayers(names: string[]): void {
+        const fresh = names.filter(n => !this.warnedUnlinkedPlayers.has(n));
+        if (fresh.length === 0) return;
+        fresh.forEach(n => this.warnedUnlinkedPlayers.add(n));
+        new Notice(
+            `⚠️ Not linked to a caravan character: ${fresh.join(', ')}.\n` +
+            'They stay in Obsidian only. Use the same name as in the webapp to sync HP and AC.',
+            10000
+        );
+    }
+
     /**
      * Create a new tracker in Firestore from the current IT encounter.
+     * IT players become proper webapp PCs (linked to their caravan character);
+     * players without a caravan character are left out so no unsynced copies appear.
      */
     async createNewTracker(caravanId: string, name: string): Promise<string> {
         const db = getDb();
         if (!db) throw new Error('Firestore not initialized');
 
-        // Get live Creature objects for proper display names
-        const itCreatures = this.itAccess.getOrderedCreatures();
-        const combatants: WebappCombatant[] = itCreatures.map((c: any) => {
-            const state = c.toJSON ? c.toJSON() as ITCreatureState : c;
-            const displayName = getCreatureDisplayName(c);
-            const combatant = itCreatureToWebappCombatant(state);
-            combatant.name = displayName; // Use full name with number
-            combatant.id = `obs_${state.id}_${Date.now()}`;
-            combatant.obsidianId = state.id; // Store IT creature ID for matching
-            return combatant;
-        });
+        const liveCreatures = this.itAccess.getOrderedCreatures();
+        const pcs = await this.loadCaravanPcs(caravanId);
+        const plan = planLinks([], liveCreatures.map(toCreatureRef), pcs);
+
+        const monsters = liveCreatures
+            .filter((c: any) => !c.player)
+            .map(monsterCombatantFromIT);
+        const combatants = [...plan.newPcCombatants, ...monsters];
+
+        const user = getCurrentUser();
+        let creatorName = 'Obsidian';
+        if (user) {
+            try {
+                const profile = await getDoc(doc(db, 'users', user.uid));
+                creatorName = profile.exists() ? (profile.data().screenName || creatorName) : creatorName;
+            } catch {
+                // Name is cosmetic; keep the default.
+            }
+        }
 
         const trackerRef = doc(collection(db, 'caravans', caravanId, 'initiativeTrackers'));
-
         await setDoc(trackerRef, {
             name,
             combatants,
             round: 1,
             turn: 0,
+            caravanId,
+            // Same fields as the webapp's createInitiativeTracker, so the DM gets DM view there.
+            ...(user ? { ownerUid: user.uid } : {}),
+            creatorName,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
         });
 
+        this.noticeUnlinkedPlayers(plan.unlinkedPlayers);
         return trackerRef.id;
     }
 
     /**
-     * Merge IT encounter into an existing webapp tracker.
+     * Link the IT encounter to an existing webapp tracker (also used to reconnect
+     * next session): repair stale obsidianIds, link IT players to their webapp PCs,
+     * and add IT monsters the tracker doesn't have yet. Nothing is added twice.
      */
     async mergeWithExistingTracker(caravanId: string, trackerId: string): Promise<void> {
         const db = getDb();
@@ -156,37 +230,31 @@ export class InitiativeBridgeManager {
         const snap = await getDoc(trackerRef);
         if (!snap.exists()) throw new Error('Tracker not found');
 
-        const existingData = snap.data();
-        const existingCombatants: WebappCombatant[] = existingData.combatants || [];
-        const existingObsidianIds = new Set(existingCombatants
-            .filter(c => c.obsidianId)
-            .map(c => c.obsidianId));
+        const existingCombatants: WebappCombatant[] = snap.data().combatants || [];
+        const liveCreatures = this.itAccess.getOrderedCreatures();
+        const pcs = await this.loadCaravanPcs(caravanId);
+        const plan = planLinks(existingCombatants, liveCreatures.map(toCreatureRef), pcs);
 
-        // Get live Creature objects for proper display names
-        const itCreatures = this.itAccess.getOrderedCreatures();
-        const newCombatants: WebappCombatant[] = [];
-
-        for (const c of itCreatures) {
-            const state = c.toJSON ? c.toJSON() as ITCreatureState : c;
-            // Skip if IT creature already mapped to a Firestore combatant
-            if (existingObsidianIds.has(state.id)) continue;
-            // Skip players — they should already exist in the webapp
-            if (state.player) continue;
-
-            const displayName = getCreatureDisplayName(c);
-            const combatant = itCreatureToWebappCombatant(state);
-            combatant.name = displayName;
-            combatant.id = `obs_${state.id}_${Date.now()}`;
-            combatant.obsidianId = state.id;
-            newCombatants.push(combatant);
+        const combatants = existingCombatants.map(c => ({ ...c }));
+        for (const { index, obsidianId } of plan.relinks) {
+            combatants[index].obsidianId = obsidianId;
         }
 
-        if (newCombatants.length > 0) {
+        // IT monsters the tracker doesn't know yet (players are handled by the link plan).
+        const newMonsters = liveCreatures
+            .filter((c: any) => !c.player && !plan.claimedItIds.has(c.id))
+            .map(monsterCombatantFromIT);
+
+        const added = [...plan.newPcCombatants, ...newMonsters];
+        if (plan.relinks.length > 0 || added.length > 0) {
             await updateDoc(trackerRef, {
-                combatants: [...existingCombatants, ...newCombatants],
+                combatants: [...combatants, ...added],
                 updatedAt: serverTimestamp(),
             });
+            console.log(`[Bridge] Link pass: ${plan.relinks.length} relinked, ${plan.newPcCombatants.length} PCs linked, ${newMonsters.length} monsters added`);
         }
+
+        this.noticeUnlinkedPlayers(plan.unlinkedPlayers);
     }
 
     /**
@@ -200,8 +268,10 @@ export class InitiativeBridgeManager {
         this.caravanId = caravanId;
         this.trackerId = trackerId;
         this._isConnected = true;
+        if (this.caravanPcs.length === 0) {
+            await this.loadCaravanPcs(caravanId);
+        }
 
-        console.log(`[Bridge] Connected: ${caravanId}/${trackerId}`);
         this.onStatusChange?.(true, { caravanId });
 
         // Store initial IT creature state
@@ -226,14 +296,14 @@ export class InitiativeBridgeManager {
 
         for (const c of itCreatures) {
             const id = c.id;
-            const name = getCreatureDisplayName(c);
             this.lastITCreatureIds.add(id);
             this.lastITCreatureMap.set(id, {
-                name,
+                name: getCreatureDisplayName(c),
                 hp: c.hp ?? 0,
                 initiative: c.initiative ?? 0,
                 hidden: c.hidden ?? false,
                 active: c.active ?? false,
+                player: c.player === true,
             });
         }
     }
@@ -256,11 +326,16 @@ export class InitiativeBridgeManager {
             unsub();
         }
         this.characterUnsubscribes = [];
+        this.monitoredPcIds.clear();
 
         for (const ref of this.itEventRefs) {
             this.app.workspace.offref(ref);
         }
         this.itEventRefs = [];
+        if (this.trackerCloseTimer !== null) {
+            window.clearTimeout(this.trackerCloseTimer);
+            this.trackerCloseTimer = null;
+        }
 
         this.isDisconnecting = false;
         this.caravanId = null;
@@ -269,10 +344,32 @@ export class InitiativeBridgeManager {
         this.lastITCreatureIds.clear();
         this.lastITCreatureMap.clear();
         this.pcCharacterData.clear();
+        this.caravanPcs = [];
+        this.warnedUnlinkedPlayers.clear();
 
         new Notice('🔴 Initiative Bridge disconnected');
         console.log('[Bridge] Disconnected');
         this.onStatusChange?.(false);
+    }
+
+    // ==========================================
+    // CREATURE LOOKUP
+    // ==========================================
+
+    /**
+     * Key for ITPluginAccess: the linked IT creature id when it is live,
+     * otherwise the combatant's name (display-name fallback).
+     */
+    private creatureKey(combatant: WebappCombatant): string {
+        if (combatant.obsidianId && this.itAccess.findCreature(combatant.obsidianId)?.id === combatant.obsidianId) {
+            return combatant.obsidianId;
+        }
+        return combatant.name;
+    }
+
+    /** Is there a live IT creature for this combatant (by id or display name)? */
+    private hasITCreature(combatant: WebappCombatant): boolean {
+        return this.itAccess.findCreature(this.creatureKey(combatant)) !== null;
     }
 
     // ==========================================
@@ -298,7 +395,7 @@ export class InitiativeBridgeManager {
             if (Date.now() < this.suppressFirestoreUntil) {
                 this.lastFirestoreState = data;
                 // Still set up character listeners on first load
-                if (!this.lastFirestoreState || this.characterUnsubscribes.length === 0) {
+                if (this.characterUnsubscribes.length === 0) {
                     this.setupCharacterListeners(data.combatants || []);
                 }
                 return;
@@ -344,12 +441,9 @@ export class InitiativeBridgeManager {
                     const prevData = this.pcCharacterData.get(pcId);
                     this.pcCharacterData.set(pcId, charData);
 
-                    // Push HP/AC changes to Obsidian
-                    if (this._isConnected && prevData) {
-                        this.handleCharacterDataChange(pcId, charData, prevData);
-                    } else if (this._isConnected) {
-                        // First load — sync initial HP/AC
-                        this.handleCharacterDataChange(pcId, charData, null);
+                    // Push HP/AC changes to Obsidian (prevData null = first load, full sync)
+                    if (this._isConnected) {
+                        this.handleCharacterDataChange(pcId, charData, prevData ?? null);
                     }
                 }
             });
@@ -394,6 +488,7 @@ export class InitiativeBridgeManager {
             if (refId !== pcId) continue;
 
             const name = combatant.name;
+            const key = this.creatureKey(combatant);
             const isSummon = combatant.type === 'Summon' && (combatant as any).isPlayerSummon;
 
             // --- Resolve effective HP based on combatant type ---
@@ -418,7 +513,6 @@ export class InitiativeBridgeManager {
                     // Wildshaped — show wildshape HP
                     effectiveHP = wildshapeData.currentHP;
                     effectiveMaxHP = wildshapeData.maxHPOverride || wildshapeData.currentHP;
-                    console.log(`[Bridge] Wildshape HP: "${name}" → ${effectiveHP}/${effectiveMaxHP}`);
                 } else {
                     // Normal PC stats
                     effectiveHP = charData.currentHP ?? charData.hp;
@@ -430,7 +524,7 @@ export class InitiativeBridgeManager {
             // --- Apply stats ---
             if (!prevData && effectiveHP !== undefined && effectiveMaxHP !== undefined) {
                 // First load — set all stats at once
-                this.itAccess.setCreatureFullStats(name, effectiveHP, effectiveMaxHP, effectiveAC);
+                this.itAccess.setCreatureFullStats(key, effectiveHP, effectiveMaxHP, effectiveAC);
                 console.log(`[Bridge] Initial stats: "${name}" → ${effectiveHP}/${effectiveMaxHP} AC:${effectiveAC ?? '-'}`);
                 continue;
             }
@@ -463,22 +557,20 @@ export class InitiativeBridgeManager {
             const isWildshaped = !!charData.activeWildshapeData;
             if (wasWildshaped !== isWildshaped && effectiveHP !== undefined && effectiveMaxHP !== undefined) {
                 // Wildshape state changed — full refresh
-                this.itAccess.setCreatureFullStats(name, effectiveHP, effectiveMaxHP, effectiveAC);
+                this.itAccess.setCreatureFullStats(key, effectiveHP, effectiveMaxHP, effectiveAC);
                 console.log(`[Bridge] Wildshape ${isWildshaped ? 'entered' : 'exited'}: "${name}" → ${effectiveHP}/${effectiveMaxHP}`);
                 continue;
             }
 
             // Incremental updates
             if (effectiveHP !== undefined && effectiveHP !== prevEffHP) {
-                this.itAccess.setCreatureHP(name, effectiveHP);
-                console.log(`[Bridge] HP sync: "${name}" → ${effectiveHP}`);
+                this.itAccess.setCreatureHP(key, effectiveHP);
             }
             if (effectiveMaxHP !== undefined && effectiveMaxHP !== prevEffMaxHP) {
-                this.itAccess.setCreatureMaxHP(name, effectiveMaxHP);
+                this.itAccess.setCreatureMaxHP(key, effectiveMaxHP);
             }
             if (effectiveAC !== undefined && effectiveAC !== prevEffAC) {
-                this.itAccess.setCreatureAC(name, effectiveAC);
-                console.log(`[Bridge] AC sync: "${name}" → ${effectiveAC}`);
+                this.itAccess.setCreatureAC(key, effectiveAC);
             }
         }
     }
@@ -492,20 +584,12 @@ export class InitiativeBridgeManager {
         // Refresh character listeners if the set of PC IDs changed
         this.refreshCharacterListenersIfNeeded(combatants);
 
-        // Build lookup maps — by obsidianId if available, else by name
-        const prevByObsId = new Map<string, WebappCombatant>();
-        const prevByName = new Map<string, WebappCombatant>();
-        for (const c of prevCombatants) {
-            if (c.obsidianId) prevByObsId.set(c.obsidianId, c);
-            prevByName.set(c.name, c);
-        }
-
-        const newByObsId = new Map<string, WebappCombatant>();
-        const newByName = new Map<string, WebappCombatant>();
-        for (const c of combatants) {
-            if (c.obsidianId) newByObsId.set(c.obsidianId, c);
-            newByName.set(c.name, c);
-        }
+        // Build lookup maps — by combatant id, obsidianId, else name
+        const matchKey = (c: WebappCombatant) => c.id || c.obsidianId || c.name;
+        const prevByKey = new Map<string, WebappCombatant>();
+        for (const c of prevCombatants) prevByKey.set(matchKey(c), c);
+        const newByKey = new Map<string, WebappCombatant>();
+        for (const c of combatants) newByKey.set(matchKey(c), c);
 
         // --- Detect turn change ---
         if (prevData && data.turn !== prevData.turn) {
@@ -514,70 +598,50 @@ export class InitiativeBridgeManager {
 
         // --- Detect new combatants (added from webapp, or first load) ---
         for (const c of combatants) {
-            const isNew = c.obsidianId
-                ? !prevByObsId.has(c.obsidianId)
-                : !prevByName.has(c.name);
-
-            // On first load (no prevData), add combatants that don't exist in IT yet
-            if (isNew) {
+            if (!prevByKey.has(matchKey(c))) {
                 this.handleNewCombatantFromFirestore(c);
             }
         }
 
         // --- Detect removed combatants ---
         for (const c of prevCombatants) {
-            const isRemoved = c.obsidianId
-                ? !newByObsId.has(c.obsidianId)
-                : !newByName.has(c.name);
-
-            if (isRemoved) {
+            if (!newByKey.has(matchKey(c))) {
                 this.handleRemovedCombatantFromFirestore(c);
             }
         }
 
         // --- Detect initiative changes (webapp → IT) ---
         for (const c of combatants) {
-            const prev = c.obsidianId
-                ? prevByObsId.get(c.obsidianId)
-                : prevByName.get(c.name);
-
+            const prev = prevByKey.get(matchKey(c));
             if (prev && prev.initiative !== c.initiative && c.initiative !== null) {
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                // Find the right name in IT (might be numbered)
-                const itName = this.findITCreatureName(c);
-                if (itName) {
-                    this.itAccess.setCreatureInitiative(itName, c.initiative);
-                }
+                this.itAccess.setCreatureInitiative(this.creatureKey(c), c.initiative);
             }
         }
 
         // --- Detect death/revive changes (webapp → Obsidian) ---
         for (const c of combatants) {
-            const prev = c.obsidianId
-                ? prevByObsId.get(c.obsidianId)
-                : prevByName.get(c.name);
-
-            const itName = this.findITCreatureName(c);
-            if (!itName) continue;
+            const prev = prevByKey.get(matchKey(c));
+            if (!this.hasITCreature(c)) continue;
+            const key = this.creatureKey(c);
 
             if (prev && !prev.isDead && c.isDead) {
                 // Killed in webapp → kill + disable in IT
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.killCreature(itName);
-                console.log(`[Bridge] Death synced to IT: "${itName}" (disabled)`);
+                this.itAccess.killCreature(key);
+                console.log(`[Bridge] Death synced to IT: "${c.name}" (disabled)`);
             } else if (prev && prev.isDead && !c.isDead) {
                 // Revived in webapp → re-enable in IT and set HP
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.setCreatureEnabled(itName, true);
+                this.itAccess.setCreatureEnabled(key, true);
                 if (c.hp !== undefined) {
-                    this.itAccess.setCreatureHP(itName, c.hp);
+                    this.itAccess.setCreatureHP(key, c.hp);
                 }
-                console.log(`[Bridge] Revive synced to IT: "${itName}" (re-enabled)`);
+                console.log(`[Bridge] Revive synced to IT: "${c.name}" (re-enabled)`);
             } else if (!prev && c.isDead) {
                 // First load — combatant already dead, disable in IT
                 this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.killCreature(itName);
-                console.log(`[Bridge] Already dead on first load: "${itName}" (disabled)`);
+                this.itAccess.killCreature(key);
             }
         }
 
@@ -592,13 +656,8 @@ export class InitiativeBridgeManager {
      * Enforced Initiative: assign fake initiative values to IT creatures
      * so the IT plugin's own sort (by initiative descending) produces
      * the exact same display order as the webapp.
-     * 
-     * Position 0 → initiative 1000
-     * Position 1 → initiative 999
-     * Position 2 → initiative 998
-     * ... and so on.
-     * 
-     * This replaces all previous manualOrder / array-reorder approaches.
+     *
+     * Position 0 → initiative 1000, position 1 → 999, and so on.
      * Real initiative values are managed by the webapp only.
      */
     private enforceInitiativeOrder(combatants: WebappCombatant[]): void {
@@ -653,21 +712,7 @@ export class InitiativeBridgeManager {
             this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
             // Re-snapshot so the fake values become the baseline
             this.snapshotITState();
-            console.log(`[Bridge] Enforced initiative order (${sorted.length} creatures)`);
         }
-    }
-
-    /**
-     * Find the IT creature name (with number suffix) that matches a Firestore combatant.
-     */
-    private findITCreatureName(combatant: WebappCombatant): string | null {
-        if (combatant.obsidianId) {
-            const creatures = this.itAccess.getOrderedCreatures();
-            const match = creatures.find((c: any) => c.id === combatant.obsidianId);
-            if (match) return getCreatureDisplayName(match);
-        }
-        // Fallback: match by name
-        return combatant.name;
     }
 
     private handleFirestoreTurnChange(data: any, combatants: WebappCombatant[]): void {
@@ -681,82 +726,66 @@ export class InitiativeBridgeManager {
 
         if (sorted.length === 0) return;
 
-        const activeIndex = turnIndex % sorted.length;
-        const targetCombatant = sorted[activeIndex];
-
-        if (targetCombatant) {
-            const itName = this.findITCreatureName(targetCombatant);
-            if (itName) {
-                console.log(`[Bridge] Firestore turn → "${itName}" (index ${activeIndex})`);
-                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.setActiveTurn(itName);
-            }
+        const targetCombatant = sorted[turnIndex % sorted.length];
+        if (targetCombatant && this.hasITCreature(targetCombatant)) {
+            this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+            this.itAccess.setActiveTurn(this.creatureKey(targetCombatant));
         }
     }
 
     private handleNewCombatantFromFirestore(combatant: WebappCombatant): void {
-        // Don't re-add if IT already has this creature
-        if (combatant.obsidianId) {
-            const creatures = this.itAccess.getOrderedCreatures();
-            if (creatures.some((c: any) => c.id === combatant.obsidianId)) return;
-        }
+        // Already in IT (linked id, or same display name)?
+        if (this.hasITCreature(combatant)) return;
 
-        // Check by name too
-        const existing = this.itAccess.getOrderedCreatures();
-        const alreadyExists = existing.some((c: any) =>
-            getCreatureDisplayName(c) === combatant.name
+        // A PC the DM already has in Obsidian under a (slightly) different name,
+        // e.g. IT party "Ayla" ↔ webapp "Ayla Moonwhisper": link instead of adding.
+        const claimed = new Set(
+            (this.lastFirestoreState?.combatants || [])
+                .map((c: WebappCombatant) => c.obsidianId)
+                .filter(Boolean)
         );
-        if (alreadyExists) return;
+        const unclaimed = this.itAccess.getOrderedCreatures()
+            .filter((c: any) => !claimed.has(c.id))
+            .map(toCreatureRef);
+        const plan = planLinks([combatant], unclaimed, []);
+        if (plan.relinks.length > 0) {
+            this.assignObsidianId(combatant, plan.relinks[0].obsidianId);
+            return;
+        }
 
         console.log(`[Bridge] New combatant from Firestore: "${combatant.name}"`);
 
         const itCreature = webappCombatantToITCreature(combatant);
         this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-        this.itAccess.addCreaturesWithInitiative([{
-            creature: itCreature,
-            initiative: combatant.initiative ?? 0,
-        }]);
+        const newId = this.itAccess.addCreatureWithInitiative(itCreature, combatant.initiative ?? 0);
 
         // Re-apply enforced initiative order so the new creature gets
         // the correct fake initiative value and slots into position.
         const allCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
         this.enforceInitiativeOrder(allCombatants);
 
-        // After adding, find the IT creature and save its ID back to Firestore
-        if (!combatant.obsidianId) {
-            this.assignObsidianId(combatant);
+        // Save the new IT id back to Firestore so later syncs match by id.
+        if (newId && combatant.obsidianId !== newId) {
+            this.assignObsidianId(combatant, newId);
         }
     }
 
     /**
-     * After adding a webapp combatant to IT, find its assigned ID and 
-     * write it back as obsidianId on the Firestore combatant.
+     * Write the IT creature id back as obsidianId on the Firestore combatant.
      */
-    private async assignObsidianId(combatant: WebappCombatant): Promise<void> {
+    private async assignObsidianId(combatant: WebappCombatant, obsidianId: string): Promise<void> {
         const db = getDb();
         if (!db || !this.caravanId || !this.trackerId) return;
 
-        const creatures = this.itAccess.getOrderedCreatures();
-        const match = creatures.find((c: any) => {
-            const name = getCreatureDisplayName(c);
-            return name === combatant.name || c.name === combatant.name;
-        });
-
-        if (!match) return;
-
-        const obsidianId = match.id as string;
         console.log(`[Bridge] Assigned obsidianId "${obsidianId}" to "${combatant.name}"`);
 
-        // Update the Firestore combatant with the obsidianId
         const trackerRef = doc(db, 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId);
         const currentCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
+        const sameCombatant = (c: WebappCombatant) => combatant.id ? c.id === combatant.id : c.name === combatant.name;
 
-        const updated = currentCombatants.map(c => {
-            if (c.id === combatant.id || c.name === combatant.name) {
-                return { ...c, obsidianId };
-            }
-            return c;
-        });
+        const updated = currentCombatants.map(c => sameCombatant(c) ? { ...c, obsidianId } : c);
+        // Keep the cache current so several assignments in a row don't overwrite each other.
+        this.lastFirestoreState = { ...this.lastFirestoreState, combatants: updated };
 
         this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
         try {
@@ -770,12 +799,10 @@ export class InitiativeBridgeManager {
     }
 
     private handleRemovedCombatantFromFirestore(combatant: WebappCombatant): void {
-        const itName = this.findITCreatureName(combatant);
-        if (itName) {
-            console.log(`[Bridge] Combatant removed from Firestore: "${itName}"`);
-            this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-            this.itAccess.removeCreatureByName(itName);
-        }
+        if (!this.hasITCreature(combatant)) return;
+        console.log(`[Bridge] Combatant removed from Firestore: "${combatant.name}"`);
+        this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+        this.itAccess.removeCreature(this.creatureKey(combatant));
     }
 
     // ==========================================
@@ -785,20 +812,16 @@ export class InitiativeBridgeManager {
     private startITListeners(): void {
         const saveRef = (this.app.workspace as any).on(
             'initiative-tracker:save-state',
-            (state: ITViewState) => {
+            (state?: ITViewState) => {
                 if (!this._isConnected || this.isDisconnecting) return;
 
-                // Guard: If most tracked creatures vanished, this is likely a new encounter.
-                // Don't sync this to Firestore — let the start-encounter event handle disconnect.
-                const liveCreatures = this.itAccess.getOrderedCreatures();
-                const liveIds = new Set(liveCreatures.map((c: any) => c.id as string));
-                let matchCount = 0;
-                for (const id of this.lastITCreatureIds) {
-                    if (liveIds.has(id)) matchCount++;
-                }
-                // If we had tracked creatures and now 0 match, a new encounter started
-                if (this.lastITCreatureIds.size > 0 && matchCount === 0) {
-                    console.log('[Bridge] All tracked creatures gone — likely new encounter, skipping sync');
+                if (this.isNewEncounter(state)) {
+                    new Notice(
+                        'New encounter in Obsidian — bridge disconnected from the old webapp tracker.\n' +
+                        'Connect again to link this encounter; players are linked to their characters automatically.',
+                        10000
+                    );
+                    this.disconnect();
                     return;
                 }
 
@@ -811,19 +834,20 @@ export class InitiativeBridgeManager {
         );
         this.itEventRefs.push(saveRef);
 
-        // Auto-disconnect on tracker close
-        const stopRef = (this.app.workspace as any).on(
-            'initiative-tracker:stop-viewing',
-            () => {
-                if (this._isConnected) {
-                    new Notice('Initiative Tracker closed — bridge disconnecting');
-                    this.disconnect();
-                }
-            }
-        );
-        this.itEventRefs.push(stopRef);
+        // Disconnect when the tracker view itself closes. (IT's 'stop-viewing' event
+        // belongs to the statblock pane, so it is not used here.)
+        const layoutRef = this.app.workspace.on('layout-change', () => this.scheduleTrackerCloseCheck());
+        this.itEventRefs.push(layoutRef);
 
-        // Auto-disconnect on new encounter
+        const unloadedRef = (this.app.workspace as any).on('initiative-tracker:unloaded', () => {
+            if (this._isConnected) {
+                new Notice('Initiative Tracker was disabled — bridge disconnecting');
+                this.disconnect();
+            }
+        });
+        this.itEventRefs.push(unloadedRef);
+
+        // Another plugin started an encounter through IT's API event.
         const newEncounterRef = (this.app.workspace as any).on(
             'initiative-tracker:start-encounter',
             () => {
@@ -834,6 +858,35 @@ export class InitiativeBridgeManager {
             }
         );
         this.itEventRefs.push(newEncounterRef);
+    }
+
+    /**
+     * IT's "New encounter" keeps only the players and resets to round 1, not started.
+     * Starting an encounter from a note replaces all monsters the same way.
+     */
+    private isNewEncounter(state?: ITViewState): boolean {
+        const liveIds = new Set(this.itAccess.getOrderedCreatures().map((c: any) => c.id as string));
+        const trackedMonsters = [...this.lastITCreatureMap.entries()].filter(([, s]) => !s.player);
+
+        // Everything we tracked is gone.
+        if (this.lastITCreatureIds.size > 0 && ![...this.lastITCreatureIds].some(id => liveIds.has(id))) {
+            return true;
+        }
+        // Every tracked monster is gone and the round was reset.
+        const monstersGone = trackedMonsters.length > 0 && !trackedMonsters.some(([id]) => liveIds.has(id));
+        const reset = (state?.round ?? 1) <= 1 && state?.state !== true;
+        return monstersGone && reset;
+    }
+
+    private scheduleTrackerCloseCheck(): void {
+        if (this.trackerCloseTimer !== null) window.clearTimeout(this.trackerCloseTimer);
+        this.trackerCloseTimer = window.setTimeout(() => {
+            this.trackerCloseTimer = null;
+            if (this._isConnected && !this.itAccess.isTrackerViewOpen()) {
+                new Notice('Initiative Tracker closed — bridge disconnecting');
+                this.disconnect();
+            }
+        }, TRACKER_CLOSE_GRACE_MS);
     }
 
     /**
@@ -851,9 +904,9 @@ export class InitiativeBridgeManager {
         // Get live Creature objects from the IT plugin
         const liveCreatures = this.itAccess.getOrderedCreatures();
 
-        // Current Firestore combatants
+        // Current Firestore combatants (copies, so a failed write leaves the cache untouched)
         const currentFirestoreCombatants: WebappCombatant[] =
-            this.lastFirestoreState?.combatants || [];
+            (this.lastFirestoreState?.combatants || []).map((c: WebappCombatant) => ({ ...c }));
         const firestoreByObsId = new Map(
             currentFirestoreCombatants
                 .filter(c => c.obsidianId)
@@ -870,39 +923,46 @@ export class InitiativeBridgeManager {
         const currentIds = new Set(liveCreatures.map((c: any) => c.id as string));
 
         // --- Detect new creatures in IT ---
-        const newMonsters: WebappCombatant[] = [];
+        const newCombatants: WebappCombatant[] = [];
+        const unlinked: string[] = [];
         for (const c of liveCreatures) {
             const id = c.id as string;
             const name = getCreatureDisplayName(c);
+            if (this.lastITCreatureIds.has(id) || firestoreByObsId.has(id) || firestoreByName.has(name)) continue;
 
-            if (!this.lastITCreatureIds.has(id) && !firestoreByObsId.has(id)) {
-                // Also check by display name (in case it was added from webapp without obsidianId)
-                if (!firestoreByName.has(name)) {
-                    const state = c.toJSON ? c.toJSON() as ITCreatureState : c;
-                    const combatant = itCreatureToWebappCombatant(state);
-                    combatant.name = name; // Full name with number
-                    combatant.id = `obs_${id}_${Date.now()}`;
-                    combatant.obsidianId = id;
-                    newMonsters.push(combatant);
-                    console.log(`[Bridge] New monster from IT: "${name}" (hidden: ${combatant.isHiddenFromPlayers})`);
+            if (c.player) {
+                // Players are linked to their caravan character, never added as unsynced copies.
+                const pc = matchCaravanPc(toCreatureRef(c), this.caravanPcs);
+                if (!pc) {
+                    unlinked.push(name);
+                    continue;
                 }
+                const existing = currentFirestoreCombatants.find(fc => fc.pcId === pc.characterId);
+                if (existing) {
+                    if (!existing.obsidianId || !currentIds.has(existing.obsidianId)) {
+                        existing.obsidianId = id;
+                        firestoreByObsId.set(id, existing);
+                        needsFullCombatantUpdate = true;
+                        console.log(`[Bridge] Linked IT player "${name}" to "${existing.name}"`);
+                    }
+                } else {
+                    newCombatants.push(buildPcCombatant(pc, toCreatureRef(c)));
+                    console.log(`[Bridge] New PC from IT: "${name}" → "${pc.name}"`);
+                }
+                continue;
             }
-        }
 
-        if (newMonsters.length > 0) {
+            newCombatants.push(monsterCombatantFromIT(c));
+            console.log(`[Bridge] New monster from IT: "${name}"`);
+        }
+        this.noticeUnlinkedPlayers(unlinked);
+
+        if (newCombatants.length > 0) {
             needsFullCombatantUpdate = true;
         }
 
-        // --- Detect removed creatures (log only, don't remove from Firestore) ---
-        // We intentionally do NOT remove creatures from Firestore when they disappear from IT.
-        // This prevents new encounters from wiping the webapp's tracker.
-        // Removal should be done manually from the webapp.
-        for (const prevId of this.lastITCreatureIds) {
-            if (!currentIds.has(prevId)) {
-                const prevName = this.lastITCreatureMap.get(prevId)?.name;
-                console.log(`[Bridge] Creature no longer in IT (not removing from Firestore): "${prevName}"`);
-            }
-        }
+        // Creatures removed in IT are intentionally NOT removed from Firestore;
+        // removal is done from the webapp (prevents new encounters wiping the tracker).
 
         // --- Detect changes per creature ---
         for (const c of liveCreatures) {
@@ -922,21 +982,18 @@ export class InitiativeBridgeManager {
                     firestoreCombatant.deathRound = this.lastFirestoreState?.round;
                 }
                 needsFullCombatantUpdate = true;
-                console.log(`[Bridge] HP change: "${name}" → ${c.hp}`);
 
                 // Auto-disable non-PC creatures at 0 HP (monsters die instantly per D&D 5e)
                 // PCs are NOT auto-disabled — they get death saving throws.
                 // GUARD: Only call setCreatureEnabled if state actually needs to change,
                 // otherwise updateAndSave triggers save-state → re-enters handleITStateChange → infinite loop
                 if (c.hp <= 0 && c.enabled !== false) {
-                    this.itAccess.setCreatureEnabled(name, false);
-                    console.log(`[Bridge] Auto-disabled "${name}" at 0 HP`);
+                    this.itAccess.setCreatureEnabled(id, false);
                 } else if (prev.hp <= 0 && c.hp > 0 && c.enabled !== true) {
                     // Healed back from 0 — re-enable
-                    this.itAccess.setCreatureEnabled(name, true);
+                    this.itAccess.setCreatureEnabled(id, true);
                     firestoreCombatant.isDead = false;
                     firestoreCombatant.deathRound = null;
-                    console.log(`[Bridge] Re-enabled "${name}" (healed from 0)`);
                 }
             }
 
@@ -949,21 +1006,16 @@ export class InitiativeBridgeManager {
             // Initiative changed — SKIP sync from IT→Firestore.
             // We use fake initiative values (1000-N) in IT to enforce order.
             // Real initiative is managed exclusively by the webapp.
-            // (No code needed — intentionally suppressed)
 
             // Turn changed (active creature)
             if (c.active && !prev.active) {
-                // This creature became active — find its turn index
                 // Use sortIndex (matches webapp's exact sort) instead of simplified sort
                 const activeSorted = [...currentFirestoreCombatants]
                     .sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
 
-                const turnIndex = activeSorted.findIndex(fc =>
-                    fc.obsidianId === id || fc.name === name
-                );
+                const turnIndex = activeSorted.findIndex(fc => fc.obsidianId === id || fc.name === name);
                 if (turnIndex >= 0) {
                     firestoreUpdate.turn = turnIndex;
-                    console.log(`[Bridge] Turn change → "${name}" (index ${turnIndex})`);
                 }
             }
         }
@@ -976,17 +1028,14 @@ export class InitiativeBridgeManager {
             if (fc?.isHiddenFromPlayers) {
                 fc.isHiddenFromPlayers = false;
                 needsFullCombatantUpdate = true;
-                this.itAccess.setCreatureHidden(activeName, false);
-                console.log(`[Bridge] Auto-reveal: "${activeName}"`);
+                this.itAccess.setCreatureHidden(activeCreature.id, false);
             }
         }
 
         // --- Build final combatant array ---
         if (needsFullCombatantUpdate) {
-            // Add new monsters (no removal — that's webapp-only)
-            let result = [...currentFirestoreCombatants, ...newMonsters];
-            // Apply sortIndex so Firestore↔Obsidian stay consistent
-            firestoreUpdate.combatants = result;
+            // Add new combatants (no removal — that's webapp-only)
+            firestoreUpdate.combatants = [...currentFirestoreCombatants, ...newCombatants];
         }
 
         // --- Write to Firestore ---
@@ -998,12 +1047,12 @@ export class InitiativeBridgeManager {
                 console.error('[Bridge] Firestore write error:', err);
             }
 
-            // If new monsters were added, schedule a delayed re-enforcement.
+            // If new combatants were added, schedule a delayed re-enforcement.
             // The webapp (source of truth) will auto-heal the sortIndex within ~100ms,
             // but this bridge ignores Firestore updates during the echo suppression window.
             // After suppression expires, re-read the latest Firestore state and enforce order.
-            if (newMonsters.length > 0) {
-                setTimeout(async () => {
+            if (newCombatants.length > 0) {
+                window.setTimeout(async () => {
                     if (!this._isConnected || !this.caravanId || !this.trackerId) return;
                     try {
                         const freshDoc = await getDoc(trackerRef);
@@ -1011,8 +1060,8 @@ export class InitiativeBridgeManager {
                         const freshCombatants: WebappCombatant[] = freshDoc.data().combatants || [];
                         // Store the healed state so future operations use correct sortIndexes
                         this.lastFirestoreState = freshDoc.data();
+                        this.refreshCharacterListenersIfNeeded(freshCombatants);
                         this.enforceInitiativeOrder(freshCombatants);
-                        console.log('[Bridge] Delayed re-enforcement after webapp healed sortIndexes');
                     } catch (err) {
                         console.error('[Bridge] Delayed re-enforcement failed:', err);
                     }

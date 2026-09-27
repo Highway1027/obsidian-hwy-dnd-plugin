@@ -1,5 +1,5 @@
 // main.ts
-// v10 - 26-02-2026 - Added status bar, ribbon icon, sidebar view, help section
+// v11 - 27-09-2026 - Help tips for reconnecting next session, new encounters and player name linking
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 import { InitiativeBridgeManager } from './src/bridge/InitiativeBridgeManager';
 import { ShareInitiativeModal } from './src/bridge/ShareInitiativeModal';
@@ -971,7 +971,9 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
                 ['Renaming Combatants', 'If a combatant is renamed in the webapp after being synced, matching may fail. The bridge assigns stable IDs (obsidianId) to prevent this, but timing edges exist.'],
                 ['Monster Visibility', 'Monsters are marked as hidden until their turn but the DM always sees them. A "player mode" toggle is planned but not yet implemented.'],
                 ['PC Death Saves', 'PCs at 0 HP stay in initiative order for death saving throws. They are only removed when manually moved to the graveyard in the webapp.'],
-                ['New Encounter', 'Starting a new encounter in the IT plugin auto-disconnects the bridge to prevent wiping the webapp tracker.'],
+                ['New Encounter', 'Starting a new encounter in the IT plugin auto-disconnects the bridge to prevent wiping the webapp tracker. Connect again (create a new tracker or pick one): players are linked to their caravan characters by name, so HP and AC sync right away.'],
+                ['Next Session', 'To continue a fight another day, connect and pick the same webapp tracker. The bridge re-links everyone by id and name, so nobody is added twice.'],
+                ['Player Names', 'IT players are linked when their name matches the caravan character, or just its first name ("Ayla" ↔ "Ayla Moonwhisper") when that is unique. Players without a match stay in Obsidian only.'],
             ];
             for (const [title, desc] of edgeItems) {
                 const li = edgeList.createEl('li');
