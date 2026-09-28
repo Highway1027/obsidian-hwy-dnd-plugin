@@ -45,6 +45,6 @@ Work on `develop`. Merging to `main` with a new version in `manifest.json` publi
 ## Focus, skills, writing
 
 - At session start name the top open items from `docs/STATUS.md`. When a new idea comes up mid-task, ask **"Now, or park it in the backlog?"** (small same-area fixes excepted); parked ideas go to the Inbox in `docs/STATUS.md`.
-- Skills: `plugin-release` (`.claude/skills/`, Antigravity workflow points to it). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
+- Skills: `plugin-release` (`.claude/skills/`; Antigravity loads it through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
 - End of a session: update `docs/STATUS.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit.
 - Tim prefers plain English, short sentences, dates as DD-MM-YYYY.
