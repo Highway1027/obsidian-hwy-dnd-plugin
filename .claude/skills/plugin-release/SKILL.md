@@ -5,7 +5,7 @@ description: Release a new version of the Highway DnD Tools Obsidian plugin - te
 
 # Plugin release
 
-Only with Tim's OK. Git here needs `-c safe.directory=D:/Webapps/obsidian-hwy-dnd-plugin`.
+Only with Tim's OK. If git refuses with "dubious ownership", use `git -c safe.directory=<this folder>`.
 
 1. **Clean tree**: `git status --porcelain` must be empty (commit or ask first).
 2. **Checks**: `npm test` and `npm run build` must pass.

@@ -2,11 +2,13 @@
 
 Rules and context for every AI coding agent (Claude Code, Antigravity, Codex). This is the single source; tool-specific files only point here.
 
+Paths below use `<drive>`: `D:` on Tim's desktop, `C:` on his other PCs.
+
 **Start of a session:** read `docs/STATUS.md`.
 
 ## What this is
 
-Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main feature: a live **bridge between the Obsidian Initiative Tracker plugin (IT) and the webapp's initiative tracker** (`D:\Webapps\wildshape-tracker`, Firebase project `wildshape-tracker`): combatants, HP, AC, conditions, turns and deaths sync both ways. Only the DM uses it.
+Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main feature: a live **bridge between the Obsidian Initiative Tracker plugin (IT) and the webapp's initiative tracker** (`<drive>:\Webapps\wildshape-tracker`, Firebase project `wildshape-tracker`): combatants, HP, AC, conditions, turns and deaths sync both ways. Only the DM uses it.
 
 | Path | Purpose |
 | --- | --- |
@@ -27,7 +29,7 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | Tests | `npm test` |
 | Release | see the `plugin-release` skill |
 
-Git in this folder needs `git -c safe.directory=D:/Webapps/obsidian-hwy-dnd-plugin ...` (the folder was created on another PC).
+If git refuses with "dubious ownership" (the desktop folder was created on another PC), use `git -c safe.directory=<this folder> ...`.
 
 ## Rules
 
