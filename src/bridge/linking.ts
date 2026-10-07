@@ -30,7 +30,9 @@ export interface LinkPlan {
     unlinkedPlayers: string[];
 }
 
-// The bridge writes fake initiatives (1000 - position, or -100) into IT to force the webapp's order.
+// Bridge 0.5.0 and older wrote fake initiatives (1000 - position, or -100) into IT to force the
+// webapp's order. Since 0.5.1 IT gets real values plus manualOrder, but saved IT encounters can
+// still hold the old fake values, so they are still recognised and ignored.
 const FAKE_INIT_MIN = 900;
 const FAKE_INIT_UNLISTED = -100;
 
@@ -84,6 +86,42 @@ export function realInitiative(initiative: number | undefined): number | null {
     if (initiative === undefined || initiative === null || Number.isNaN(initiative)) return null;
     if (initiative >= FAKE_INIT_MIN || initiative === FAKE_INIT_UNLISTED) return null;
     return initiative;
+}
+
+/** First word of a name as written ("Ogg of the Cragmaw tribe" → "Ogg"), without trailing punctuation. */
+export function shortName(name: string): string {
+    return (name ?? '').trim().split(/\s+/)[0].replace(/[,;:.]+$/, '');
+}
+
+/**
+ * Name the bridge gives a webapp combatant in IT. Player characters get their first name,
+ * unless another player character shares it (then both keep their full names).
+ * Monsters, allies and summons keep their full name.
+ */
+export function itNameFor(combatant: WebappCombatant, otherPcNames: string[]): string {
+    if (combatant.type !== 'Player Character') return combatant.name;
+    const first = shortName(combatant.name);
+    if (!first || first === combatant.name.trim()) return combatant.name;
+    const own = normalizeName(combatant.name);
+    const clash = otherPcNames.some(n => normalizeName(n) !== own && firstWord(n) === firstWord(first));
+    return clash ? combatant.name : first;
+}
+
+/**
+ * The IT creature that belongs to a webapp combatant: its linked id, then the first exact
+ * name ("Goblin 2"), then, for player characters, a unique first-name match ("Ogg").
+ */
+export function findCreatureFor<T extends ItCreatureRef>(combatant: WebappCombatant, creatures: T[]): T | null {
+    if (combatant.obsidianId) {
+        const linked = creatures.find(c => c.id === combatant.obsidianId);
+        if (linked) return linked;
+    }
+    const wanted = normalizeName(combatant.name);
+    const exact = creatures.find(c => normalizeName(c.displayName) === wanted)
+        ?? creatures.find(c => normalizeName(c.name) === wanted);
+    if (exact) return exact;
+    if (combatant.type !== 'Player Character') return null;
+    return uniqueFirstWord<T>(creatures.filter(c => c.player), namesOf, combatant.name);
 }
 
 /** Build a webapp PC combatant the same way the webapp's Add Combatant modal does. */

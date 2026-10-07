@@ -2,6 +2,7 @@
 // v2 - 25-02-2026 - Updated to use correct IT plugin CreatureState field names
 
 import type { ITCreatureState } from './itPluginAccess';
+import { realInitiative } from './linking';
 
 /**
  * Webapp combatant format (Firestore document fields).
@@ -28,6 +29,7 @@ export interface WebappCombatant {
     hasAdvantage?: boolean;
     obsidianId?: string;       // IT creature ID for bridge matching
     sortIndex?: number;        // Mathematical sort order from the webapp
+    dexterity_score?: number;
 }
 
 /**
@@ -52,7 +54,7 @@ export function itCreatureToWebappCombatant(creature: ITCreatureState): WebappCo
     return {
         name: name,
         type: type,
-        initiative: creature.initiative ?? null,
+        initiative: realInitiative(creature.initiative),
         hp: creature.currentHP ?? creature.hp ?? 0,
         maxHp: creature.currentMaxHP ?? creature.hp ?? 0,
         tempHp: creature.tempHP ?? 0,
@@ -68,10 +70,11 @@ export function itCreatureToWebappCombatant(creature: ITCreatureState): WebappCo
 /**
  * Map a webapp combatant → IT plugin HomebrewCreature format for adding.
  * Used when syncing new combatants FROM the webapp TO the IT plugin.
+ * `itName` is the name shown in IT (first name for player characters, see linking.itNameFor).
  */
-export function webappCombatantToITCreature(combatant: WebappCombatant): any {
+export function webappCombatantToITCreature(combatant: WebappCombatant, itName: string = combatant.name): any {
     return {
-        name: combatant.name,
+        name: itName,
         hp: combatant.maxHp ?? combatant.hp ?? 0,
         ac: combatant.ac ?? 0,
         modifier: combatant.initiative_modifier ?? 0,
