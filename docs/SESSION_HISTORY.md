@@ -2,7 +2,9 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
-## 07-10-2026 - Bridge 0.5.1 (built, not released)
+## 07/08-10-2026 - Bridge 0.5.1 (released)
+
+- Released 08-10-2026: main `4841d98`, tag `0.5.1`, GitHub release with main.js, manifest.json, styles.css. `package.json` version now matches the manifest (was 0.1.9); release skill updated for that.
 
 - Found: removing a creature in IT did nothing in the webapp (monster stayed alive and was re-added to IT on the next connect). Now removed monsters/allies get `isDead` + `deathRound` (`removal.ts`), also during the echo window; PCs and player summons never die this way; dead monsters are not re-added on connect; reviving one in the webapp adds it back.
 - Fake 1000/999 initiatives replaced: IT gets the real value plus `manualOrder` = webapp position (`ordering.ts`; IT 13.0.17+ sorts initiative, then manualOrder). IT doesn't save manualOrder, so it is reapplied on every webapp change. Old fake values are still ignored.
