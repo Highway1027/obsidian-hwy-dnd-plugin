@@ -16,7 +16,9 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | `src/firebase.ts` | Firebase connection to the webapp backend |
 | `src/bridge/InitiativeBridgeManager.ts` | Two-way sync logic (connect, relink, echo suppression, new-encounter and tracker-close detection) |
 | `src/bridge/itPluginAccess.ts` | Access to IT's Svelte stores; creatures addressed by IT id |
-| `src/bridge/linking.ts` | Pure matching of IT creatures ↔ webapp combatants ↔ campaign PCs (tested) |
+| `src/bridge/linking.ts` | Pure matching of IT creatures ↔ webapp combatants ↔ campaign PCs, first names for PCs in IT (tested) |
+| `src/bridge/ordering.ts` | Pure turn order: copy of the webapp sort, real initiative + `manualOrder` for IT (tested) |
+| `src/bridge/removal.ts` | Pure rule: monsters removed in IT become dead in the webapp (tested) |
 | `src/bridge/fieldMapping.ts` | Stat translation between IT and the webapp |
 | `src/bridge/BridgeStatusView.ts`, `ShareInitiativeModal.ts` | Sidebar status view, connect modal |
 

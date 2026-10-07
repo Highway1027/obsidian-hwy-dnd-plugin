@@ -1,19 +1,20 @@
 # Status
 
-Start here. Current state and open work only. Last update: 28-09-2026.
+Start here. Current state and open work only. Last update: 07-10-2026.
 
 ## Now
 
+- **0.5.1** built on `develop` (07-10-2026), **not released yet** (release = `plugin-release` skill, with Tim's OK): real initiative numbers in IT (real value + `manualOrder` = webapp position, no more 1000/999), monster initiative edits in IT sync to the webapp, first names for player characters in IT, monsters removed in IT become dead in the webapp. 30 unit tests pass. Needs IT 13.0.17+ on the DM's PC (ask him his version). Test steps: `test-plans/Obsidian bridge 0.5.1 test steps.md`.
 - **0.5.0** on GitHub (27-09-2026): relink on connect, IT players auto-linked to campaign PCs, creatures addressed by IT id, new-encounter and tracker-close detection. **Not yet tested in Obsidian**: steps in `test-plans/Obsidian bridge 0.5.0 test steps.md`.
 
 ## Known issues
 
-- Drag-and-drop reordering in IT triggers rapid changes that can break the bridge. Workaround: change initiative values directly.
+- Drag-and-drop reordering in IT triggers rapid changes that can break the bridge. Workaround: change initiative values directly (since 0.5.1, monster values typed in IT sync to the webapp).
 - If assigning `obsidianId` to a webapp combatant fails, the name fallback breaks after a rename.
 - Monsters "hidden until their turn": `isHiddenFromPlayers` is set, but the webapp only hides them in the public view (webapp backlog).
+- The bridge assumes IT sorts high initiative first (IT's default). With "ascending" in IT settings the order is reversed.
+- `ordering.ts` copies the webapp's sort (`src/components/initiative/combatUtils.js`, `getSortedCombatants`). Change both together.
 
 ## Inbox
 
 Ideas parked during a session, one dated line each.
-
-- 07-10-2026: Bridge 0.5.1. (1) Normal initiative numbers in IT: in `enforceInitiativeOrder`, replace the fake 1000/999 values with the real initiative plus `manualOrder` = webapp sortIndex. IT sorts by initiative, then `manualOrder`, then its tie setting (IT 13.0.17+; IT does not save `manualOrder`, so reapply on connect). The DM dislikes the fake numbers. (2) Send only first names of player characters to IT ("Ogg of the Cragmaw tribe" becomes "Ogg"); monsters keep full names; keep the full name if two PCs share a first name; check the name-fallback matching. (3) Added 07-10-2026: the DM removes dead monsters in IT without always setting HP to 0; a monster removed in IT should become dead in the webapp (`isDead`, graveyard) instead of disappearing or staying alive. Check what removal does now (`InitiativeBridgeManager.ts`, `fieldMapping.ts` sets isDead only from HP); PCs removed in IT probably should not die. Tests for all three.

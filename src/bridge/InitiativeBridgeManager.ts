@@ -5,7 +5,12 @@
 import { App, Notice } from 'obsidian';
 import { ITPluginAccess, type ITCreatureState, type ITViewState } from './itPluginAccess';
 import { itCreatureToWebappCombatant, webappCombatantToITCreature, type WebappCombatant } from './fieldMapping';
-import { planLinks, matchCaravanPc, buildPcCombatant, type CaravanPc, type ItCreatureRef } from './linking';
+import {
+    planLinks, matchCaravanPc, buildPcCombatant, findCreatureFor, itNameFor, realInitiative,
+    type CaravanPc, type ItCreatureRef
+} from './linking';
+import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
+import { markRemovedMonstersDead, type RemovedCreature } from './removal';
 import {
     doc, getDoc, setDoc, updateDoc, collection,
     onSnapshot, getDocs, serverTimestamp,
@@ -18,9 +23,8 @@ const ECHO_SUPPRESSION_MS = 2000;
 // Wait this long after a layout change before deciding the tracker view is really closed.
 const TRACKER_CLOSE_GRACE_MS = 1500;
 
-// No bridgeSortCombatants needed — the webapp is the master.
-// We use "Enforced Initiative" (fake init values) to force the IT plugin
-// to display in the exact order the webapp dictates via sortIndex.
+// The webapp is the master of the turn order (sortIndex). IT gets the real initiative
+// numbers plus manualOrder (the webapp position), which IT uses to break ties (ordering.ts).
 
 /**
  * Helper: get the "full display name" from an IT Creature object.
@@ -357,14 +361,20 @@ export class InitiativeBridgeManager {
     // ==========================================
 
     /**
-     * Key for ITPluginAccess: the linked IT creature id when it is live,
-     * otherwise the combatant's name (display-name fallback).
+     * Key for ITPluginAccess: the id of the IT creature that belongs to this combatant
+     * (linked id, exact name, or a PC's first name), otherwise the combatant's name.
      */
     private creatureKey(combatant: WebappCombatant): string {
-        if (combatant.obsidianId && this.itAccess.findCreature(combatant.obsidianId)?.id === combatant.obsidianId) {
-            return combatant.obsidianId;
-        }
-        return combatant.name;
+        const refs = this.itAccess.getOrderedCreatures().map(toCreatureRef);
+        return findCreatureFor(combatant, refs)?.id ?? combatant.name;
+    }
+
+    /** Names of all player characters in the tracker and the caravan (for the first-name clash check). */
+    private allPcNames(): string[] {
+        const inTracker = (this.lastFirestoreState?.combatants || [])
+            .filter((c: WebappCombatant) => c.type === 'Player Character')
+            .map((c: WebappCombatant) => c.name);
+        return [...inTracker, ...this.caravanPcs.map(pc => pc.name)];
     }
 
     /** Is there a live IT creature for this combatant (by id or display name)? */
@@ -610,19 +620,16 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // --- Detect initiative changes (webapp → IT) ---
-        for (const c of combatants) {
-            const prev = prevByKey.get(matchKey(c));
-            if (prev && prev.initiative !== c.initiative && c.initiative !== null) {
-                this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-                this.itAccess.setCreatureInitiative(this.creatureKey(c), c.initiative);
-            }
-        }
+        // Initiative changes (webapp → IT) are applied by enforceInitiativeOrder below.
 
         // --- Detect death/revive changes (webapp → Obsidian) ---
         for (const c of combatants) {
             const prev = prevByKey.get(matchKey(c));
-            if (!this.hasITCreature(c)) continue;
+            if (!this.hasITCreature(c)) {
+                // A monster the DM removed in IT (so it died) and that is revived in the webapp: add it back.
+                if (prev && prev.isDead && !c.isDead) this.handleNewCombatantFromFirestore(c);
+                continue;
+            }
             const key = this.creatureKey(c);
 
             if (prev && !prev.isDead && c.isDead) {
@@ -645,74 +652,36 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // --- Enforced Initiative: assign fake init values to force IT order ---
-        // The webapp's sortIndex is the source of truth. We assign decreasing
-        // initiative values (1000, 999, 998...) so the IT plugin's own sort
-        // (by initiative descending) produces the exact same order.
+        // --- Turn order: real initiative + manualOrder so IT matches the webapp ---
         this.enforceInitiativeOrder(combatants);
     }
 
     /**
-     * Enforced Initiative: assign fake initiative values to IT creatures
-     * so the IT plugin's own sort (by initiative descending) produces
-     * the exact same display order as the webapp.
-     *
-     * Position 0 → initiative 1000, position 1 → 999, and so on.
-     * Real initiative values are managed by the webapp only.
+     * Give IT the webapp's order: real initiative numbers, with manualOrder (the webapp
+     * position) to break ties (ordering.planItOrder). IT does not save manualOrder, so this
+     * runs on every webapp change, including the first snapshot after connecting.
      */
     private enforceInitiativeOrder(combatants: WebappCombatant[]): void {
-        const sorted = [...combatants].sort((a, b) => (a.sortIndex ?? 99999) - (b.sortIndex ?? 99999));
-        if (sorted.length === 0) return;
+        if (combatants.length === 0) return;
 
         const itCreatures = this.itAccess.getOrderedCreatures();
         if (itCreatures.length === 0) return;
 
-        let changed = false;
-        const usedIds = new Set<string>();
+        const refs: OrderedCreatureRef[] = itCreatures.map((c: any) => ({ ...toCreatureRef(c), manualOrder: c.manualOrder }));
+        const changes = planItOrder(combatants, refs);
+        if (changes.length === 0) return;
 
-        for (let i = 0; i < sorted.length; i++) {
-            const c = sorted[i];
-            const fakeInit = 1000 - i;
-
-            // Find the IT creature — by obsidianId first, then by name
-            let itCreature: any = null;
-            if (c.obsidianId) {
-                itCreature = itCreatures.find((itc: any) => itc.id === c.obsidianId);
-            }
-            if (!itCreature) {
-                itCreature = itCreatures.find((itc: any) =>
-                    !usedIds.has(itc.id) &&
-                    (getCreatureDisplayName(itc) === c.name || itc.name === c.name)
-                );
-            }
-
-            if (itCreature) {
-                usedIds.add(itCreature.id);
-                if (itCreature.initiative !== fakeInit) {
-                    itCreature.initiative = fakeInit;
-                    changed = true;
-                }
-            }
+        for (const { id, initiative, manualOrder } of changes) {
+            const creature = itCreatures.find((c: any) => c.id === id);
+            if (!creature) continue;
+            creature.initiative = initiative;
+            creature.manualOrder = manualOrder;
         }
 
-        // Also set any IT creatures NOT in the webapp list to very low initiative
-        for (const itc of itCreatures) {
-            if (!usedIds.has(itc.id)) {
-                const lowInit = -100;
-                if (itc.initiative !== lowInit) {
-                    itc.initiative = lowInit;
-                    changed = true;
-                }
-            }
-        }
-
-        if (changed) {
-            // Save and suppress echo — these fake values should NOT sync back
-            this.itAccess.triggerSave();
-            this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
-            // Re-snapshot so the fake values become the baseline
-            this.snapshotITState();
-        }
+        // These values come from the webapp: don't let the save bounce back as IT edits.
+        this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
+        this.itAccess.triggerSave();
+        this.snapshotITState();
     }
 
     private handleFirestoreTurnChange(data: any, combatants: WebappCombatant[]): void {
@@ -721,8 +690,7 @@ export class InitiativeBridgeManager {
         // NOTE: Do NOT filter out dead combatants here!
         // The webapp's turn index maps into getSortedCombatants() which includes ALL combatants.
         // Dead ones are only filtered for display, not for turn indexing.
-        const sorted = [...combatants]
-            .sort((a, b) => (a.sortIndex ?? 99999) - (b.sortIndex ?? 99999));
+        const sorted = webappOrder(combatants);
 
         if (sorted.length === 0) return;
 
@@ -734,33 +702,33 @@ export class InitiativeBridgeManager {
     }
 
     private handleNewCombatantFromFirestore(combatant: WebappCombatant): void {
-        // Already in IT (linked id, or same display name)?
-        if (this.hasITCreature(combatant)) return;
-
-        // A PC the DM already has in Obsidian under a (slightly) different name,
-        // e.g. IT party "Ayla" ↔ webapp "Ayla Moonwhisper": link instead of adding.
-        const claimed = new Set(
+        // Already in IT? By linked id, same name, or a PC the DM has under a shorter name
+        // (IT party "Ayla" ↔ webapp "Ayla Moonwhisper"). Link it instead of adding a copy.
+        const claimedByOthers = new Set(
             (this.lastFirestoreState?.combatants || [])
+                .filter((c: WebappCombatant) => c.obsidianId && c.obsidianId !== combatant.obsidianId)
                 .map((c: WebappCombatant) => c.obsidianId)
-                .filter(Boolean)
         );
         const unclaimed = this.itAccess.getOrderedCreatures()
-            .filter((c: any) => !claimed.has(c.id))
+            .filter((c: any) => !claimedByOthers.has(c.id))
             .map(toCreatureRef);
-        const plan = planLinks([combatant], unclaimed, []);
-        if (plan.relinks.length > 0) {
-            this.assignObsidianId(combatant, plan.relinks[0].obsidianId);
+        const existing = findCreatureFor(combatant, unclaimed);
+        if (existing) {
+            if (combatant.obsidianId !== existing.id) this.assignObsidianId(combatant, existing.id);
             return;
         }
 
+        // Dead monsters (e.g. removed in IT earlier) are not put back on reconnect.
+        if (combatant.isDead && combatant.type !== 'Player Character') return;
+
         console.log(`[Bridge] New combatant from Firestore: "${combatant.name}"`);
 
-        const itCreature = webappCombatantToITCreature(combatant);
+        // Player characters show with their first name in IT ("Ogg of the Cragmaw tribe" → "Ogg").
+        const itCreature = webappCombatantToITCreature(combatant, itNameFor(combatant, this.allPcNames()));
         this.suppressITUntil = Date.now() + ECHO_SUPPRESSION_MS;
         const newId = this.itAccess.addCreatureWithInitiative(itCreature, combatant.initiative ?? 0);
 
-        // Re-apply enforced initiative order so the new creature gets
-        // the correct fake initiative value and slots into position.
+        // Re-apply the turn order so the new creature gets its manualOrder and slots into position.
         const allCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
         this.enforceInitiativeOrder(allCombatants);
 
@@ -826,6 +794,9 @@ export class InitiativeBridgeManager {
                 }
 
                 if (Date.now() < this.suppressITUntil) {
+                    // Webapp changes arrive all the time (players' HP), so a DM removal in this
+                    // window must not be lost with the echo.
+                    this.writeRemovedMonsterDeaths();
                     this.snapshotITState();
                     return;
                 }
@@ -876,6 +847,37 @@ export class InitiativeBridgeManager {
         const monstersGone = trackedMonsters.length > 0 && !trackedMonsters.some(([id]) => liveIds.has(id));
         const reset = (state?.round ?? 1) <= 1 && state?.state !== true;
         return monstersGone && reset;
+    }
+
+    /** Creatures in the last IT snapshot that are no longer in IT. */
+    private removedSinceSnapshot(): RemovedCreature[] {
+        const liveIds = new Set(this.itAccess.getOrderedCreatures().map((c: any) => c.id as string));
+        return [...this.lastITCreatureMap.entries()]
+            .filter(([id]) => !liveIds.has(id))
+            .map(([id, s]) => ({ id, name: s.name, player: s.player }));
+    }
+
+    /** Monsters the DM removed in IT become dead in the webapp (removal.ts). */
+    private async writeRemovedMonsterDeaths(): Promise<void> {
+        if (!this.caravanId || !this.trackerId || !this.lastFirestoreState) return;
+        const removed = this.removedSinceSnapshot();
+        if (removed.length === 0) return;
+
+        const combatants: WebappCombatant[] = (this.lastFirestoreState.combatants || []).map((c: WebappCombatant) => ({ ...c }));
+        const killed = markRemovedMonstersDead(combatants, removed, this.lastFirestoreState.round);
+        if (killed.length === 0) return;
+
+        console.log(`[Bridge] Removed in IT, now dead in the webapp: ${killed.join(', ')}`);
+        this.lastFirestoreState = { ...this.lastFirestoreState, combatants };
+        this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
+        try {
+            await updateDoc(doc(getDb(), 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId), {
+                combatants,
+                updatedAt: serverTimestamp(),
+            });
+        } catch (err) {
+            console.error('[Bridge] Failed to mark removed monsters dead:', err);
+        }
     }
 
     private scheduleTrackerCloseCheck(): void {
@@ -961,8 +963,18 @@ export class InitiativeBridgeManager {
             needsFullCombatantUpdate = true;
         }
 
-        // Creatures removed in IT are intentionally NOT removed from Firestore;
-        // removal is done from the webapp (prevents new encounters wiping the tracker).
+        // --- Creatures removed in IT ---
+        // Never removed from Firestore (a new encounter must not wipe the tracker), but a
+        // removed monster is beaten: it becomes dead in the webapp. PCs stay as they are.
+        const killed = markRemovedMonstersDead(currentFirestoreCombatants, this.removedSinceSnapshot(), this.lastFirestoreState?.round);
+        if (killed.length > 0) {
+            needsFullCombatantUpdate = true;
+            console.log(`[Bridge] Removed in IT, now dead in the webapp: ${killed.join(', ')}`);
+        }
+
+        let initiativeChanged = false;
+        let playerInitiativeEdited = false;
+        let activeId: string | null = null;   // webapp id of the combatant whose turn IT just started
 
         // --- Detect changes per creature ---
         for (const c of liveCreatures) {
@@ -1003,20 +1015,22 @@ export class InitiativeBridgeManager {
                 needsFullCombatantUpdate = true;
             }
 
-            // Initiative changed — SKIP sync from IT→Firestore.
-            // We use fake initiative values (1000-N) in IT to enforce order.
-            // Real initiative is managed exclusively by the webapp.
-
-            // Turn changed (active creature)
-            if (c.active && !prev.active) {
-                // Use sortIndex (matches webapp's exact sort) instead of simplified sort
-                const activeSorted = [...currentFirestoreCombatants]
-                    .sort((a, b) => (a.sortIndex ?? -1) - (b.sortIndex ?? -1));
-
-                const turnIndex = activeSorted.findIndex(fc => fc.obsidianId === id || fc.name === name);
-                if (turnIndex >= 0) {
-                    firestoreUpdate.turn = turnIndex;
+            // Initiative edited in IT: monsters sync to the webapp (IT is their source, like HP);
+            // players' initiative belongs to the webapp, so their IT value is put back below.
+            const itInit = realInitiative(c.initiative);
+            if (c.initiative !== prev.initiative && itInit !== null && itInit !== firestoreCombatant.initiative) {
+                if (c.player) {
+                    playerInitiativeEdited = true;
+                } else {
+                    firestoreCombatant.initiative = itInit;
+                    initiativeChanged = true;
+                    needsFullCombatantUpdate = true;
                 }
+            }
+
+            // Turn changed (active creature); the index is worked out on the final list below.
+            if (c.active && !prev.active) {
+                activeId = firestoreCombatant.id ?? null;
             }
         }
 
@@ -1033,9 +1047,20 @@ export class InitiativeBridgeManager {
         }
 
         // --- Build final combatant array ---
+        // Add new combatants (no removal — that's webapp-only) and set sortIndex the way the
+        // webapp does, so new combatants and initiative edits get their place straight away.
+        const finalCombatants = needsFullCombatantUpdate
+            ? withSortIndex([...currentFirestoreCombatants, ...newCombatants])
+            : currentFirestoreCombatants;
         if (needsFullCombatantUpdate) {
-            // Add new combatants (no removal — that's webapp-only)
-            firestoreUpdate.combatants = [...currentFirestoreCombatants, ...newCombatants];
+            firestoreUpdate.combatants = finalCombatants;
+        }
+
+        if (activeId) {
+            const turnIndex = webappOrder(finalCombatants).findIndex(fc => fc.id === activeId);
+            if (turnIndex >= 0) {
+                firestoreUpdate.turn = turnIndex;
+            }
         }
 
         // --- Write to Firestore ---
@@ -1043,14 +1068,15 @@ export class InitiativeBridgeManager {
             this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
             try {
                 await updateDoc(trackerRef, firestoreUpdate);
+                if (needsFullCombatantUpdate) {
+                    this.lastFirestoreState = { ...this.lastFirestoreState, ...firestoreUpdate };
+                }
             } catch (err) {
                 console.error('[Bridge] Firestore write error:', err);
             }
 
-            // If new combatants were added, schedule a delayed re-enforcement.
-            // The webapp (source of truth) will auto-heal the sortIndex within ~100ms,
-            // but this bridge ignores Firestore updates during the echo suppression window.
-            // After suppression expires, re-read the latest Firestore state and enforce order.
+            // Re-read after the echo window, in case the webapp changed something meanwhile
+            // (the bridge ignores Firestore updates during that window).
             if (newCombatants.length > 0) {
                 window.setTimeout(async () => {
                     if (!this._isConnected || !this.caravanId || !this.trackerId) return;
@@ -1071,5 +1097,10 @@ export class InitiativeBridgeManager {
 
         // Update tracked state
         this.snapshotITState();
+
+        // New tie order after a monster's initiative edit; a player's edit is put back.
+        if (initiativeChanged || playerInitiativeEdited || newCombatants.length > 0) {
+            this.enforceInitiativeOrder(finalCombatants);
+        }
     }
 }
