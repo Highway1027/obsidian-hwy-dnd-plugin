@@ -33,6 +33,7 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | --- | --- |
 | Watch build | `npm run dev` |
 | Production build (type check + bundle) | `npm run build` |
+| Build and copy into Tim's vault (checks the copy) | `npm run vault` (vault: `OBSIDIAN_VAULT`, else `<drive>:\Obsidian\highway-vault`) |
 | Tests | `npm test` |
 | Release | see the `plugin-release` skill |
 
@@ -44,6 +45,7 @@ If git refuses with "dubious ownership" (the desktop folder was created on anoth
 - **Link by id, not name**: IT id ↔ webapp `obsidianId`. Names are only a fallback for the first match (full name, or first name when unique).
 - Keep matching and mapping logic pure (in `linking.ts` / `fieldMapping.ts`) and covered by `tests/`.
 - IT internals (Svelte stores) can change with IT updates: keep all IT access inside `itPluginAccess.ts`.
+- **Newest build before every hand test:** before asking Tim to test anything in Obsidian, make sure his vault runs the code being tested: `npm run vault` for unreleased code (then he reloads the plugin), or a release he updates via BRAT. Name the build (date and time, or version) in the sitting's "Before you start". If the test also needs webapp changes, they must be deployed first; say so.
 - Webapp-side changes (Firestore rules, initiative functions) follow the webapp `AGENTS.md`.
 - Obsidian plugin basics: register listeners with `this.registerEvent`/`registerInterval` so they unload cleanly; no network calls beyond Firebase; `main.js` is build output (git-ignored).
 
@@ -54,6 +56,6 @@ Work on `develop`. Merging to `main` with a new version in `manifest.json` publi
 ## Focus, skills, writing
 
 - At session start name the top open items from `docs/STATUS.md`. When a new idea comes up mid-task, ask **"Now, or park it in the backlog?"** (small same-area fixes excepted); parked ideas go to the Inbox in `docs/STATUS.md`.
-- Skills: `plugin-release` (`.claude/skills/`; Antigravity loads it through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
-- End of a session: update `docs/STATUS.md` and `docs/TESTING.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit. Then, when the next steps are clear, end with a short **kickstart prompt** Tim can paste into the next chat, in a fenced code block: what to check or decide first and what to build. A few lines; point to `docs/STATUS.md` instead of repeating it. Skip it when the next step is unclear and say why.
+- Skills: `plugin-release`, `plugin-wrap-up` (`.claude/skills/`; Antigravity loads them through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
+- End of a session: run the `plugin-wrap-up` skill (STATUS, TESTING, history, newest build in the vault, commit, kickstart prompt for the next chat).
 - Tim prefers plain English, short sentences, dates as DD-MM-YYYY.

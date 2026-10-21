@@ -5,6 +5,7 @@ Short log for troubleshooting. Newest first, 3 to 6 lines per session; details i
 ## 21-10-2026 - Release 0.6.0
 
 - Released 0.6.0 (minor: new features since 0.5.2): bridge button, one-click reconnect, connect window redesign, new encounter, players added back. 52 tests and build passed; DM updates via BRAT.
+- New `npm run vault` (`copy-to-vault.mjs`): build, copy main.js/manifest.json/styles.css into the vault, check the copy. Rule in AGENTS.md: run it before every hand test (stale vault builds fooled a test earlier today). New skill `plugin-wrap-up` holds the end-of-session steps.
 - AGENTS.md: end of a session now includes a kickstart prompt for the next chat (same rule as the webapp wrap-up skill).
 
 ## 21-10-2026 - A player removed in IT comes back

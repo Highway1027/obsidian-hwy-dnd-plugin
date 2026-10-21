@@ -11,6 +11,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - **A step you don't mention counts as passed.**
 - What the sitting needs (plugin version, IT version, a tracker with players and monsters) goes in "Before you start".
 - **Self-test first**: what the bridge does with IT and the webapp gets a step in the self-test (`src/selftest/BridgeSelfTest.ts`, step ids like the sittings). Hand sittings only hold what it can't check: an Obsidian restart, IT's own buttons and panes, the webapp's look, the DM's PC. Pure rules belong in `tests/` (`npm test`). Mark a step *assumed* when an earlier result covers it.
+- **Before you start** names the build to test: "the build of DD-MM-YYYY HH:MM is in the vault (`npm run vault`); reload the plugin", or "update to <version> via BRAT". The agent runs `npm run vault` itself before handing over a sitting.
 - When a release passes, remove its steps and add one dated line under Results.
 
 **If something goes wrong:** open Obsidian's console (Ctrl+Shift+I) and copy the lines starting with `[Bridge]`.
