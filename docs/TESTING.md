@@ -17,28 +17,16 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 ## Results so far
 
-- Nothing tested yet. 0.5.0 (27-09-2026) and 0.5.1 (08-10-2026) are covered by the sittings below.
 - 21-10-2026: self-test built (on `develop`, not released). It checks old steps A1-A5, B1-B4, C1-C4, D1-D5 and E5 by itself.
-- 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath"). A5 skipped: the webapp rules don't let the DM write a character's HP (expected).
+- 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath").
+- 21-10-2026 second run: **18 passed, A5 skipped** (all bridge behaviour of 0.5.0/0.5.1 except player HP). A5 can't run: characters linked to D&D Beyond get HP only from there, the DM can't write it. Player HP is covered by hand in B1.
 
 ---
-
-## Sitting A: Bridge self-test (≈ 5 min, first time)
-
-**Before you start:**
-- Your desktop vault. Copy `main.js`, `manifest.json`, `styles.css` from the plugin repo folder (built 21-10-2026) into `.obsidian/plugins/highway-dnd-tools/`, then reload Obsidian.
-- Webapp → Developer → Test campaigns: make a test copy of Arc van Noah (if there is none). Open it, then on the map use **Copy Campaign ID**.
-- Obsidian → Settings → Highway DnD Tools → **Self-test campaign ID**: paste that ID.
-- Open the Initiative Tracker view. Its current encounter will be cleared.
-
-- [ ] A1. Ctrl+P → **Run bridge self-test (test campaign)**. A popup names the TEST campaign. Click **Start**.
-- [ ] A2. Leave Obsidian alone. After about a minute the note **Bridge self-test** opens, with every line ✅.
-- [ ] A3. Any ❌ or ⏭️: send me the note. (A5 may skip if the webapp doesn't let the DM change a character's HP.)
 
 ## Sitting B: Restart and IT's own buttons (≈ 5 min)
 
 **Before you start:** a webapp tracker with players and monsters, connected in Obsidian.
-- [ ] B1. Close Obsidian completely, reopen, connect to the same tracker. Nobody is added twice; player HP and AC came through.
+- [ ] B1. Close Obsidian completely, reopen, connect to the same tracker. Nobody is added twice; player HP and AC came through. Change a player's HP in D&D Beyond: it shows in IT within a few seconds.
 - [ ] B2. Open a monster's statblock in Obsidian and close it. The bridge stays connected.
 - [ ] B3. Click **New encounter** in IT. A message says the bridge disconnected. The old monsters do not die in the webapp.
 - [ ] B4. Add new monsters, connect with **Create new tracker**. Open it in the webapp as DM: DM view, hidden monsters included.

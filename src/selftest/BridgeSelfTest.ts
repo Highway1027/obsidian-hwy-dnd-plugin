@@ -239,7 +239,8 @@ export class BridgeSelfTest {
             try {
                 await updateDoc(charRef, { [field]: target });
             } catch (err) {
-                throw new SkipStep(`no write access to the test character (${String(err)})`);
+                // Expected for characters linked to D&D Beyond: the webapp only takes their HP from there.
+                throw new SkipStep("the webapp does not let the DM change this character's HP (D&D Beyond link?); checked by hand in sitting B1");
             }
             try {
                 await this.waitFor(async () => {
