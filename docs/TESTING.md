@@ -1,6 +1,6 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing. Everything below can wait for a convenient moment.
+**Blocking right now:** nothing for development. Release 0.7.0 waits for sitting J.
 
 Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 21-10-2026.
 
@@ -11,6 +11,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - **A step you don't mention counts as passed.**
 - What the sitting needs (plugin version, IT version, a tracker with players and monsters) goes in "Before you start".
 - **Self-test first**: what the bridge does with IT and the webapp gets a step in the self-test (`src/selftest/BridgeSelfTest.ts`, step ids like the sittings). Hand sittings only hold what it can't check: an Obsidian restart, IT's own buttons and panes, the webapp's look, the DM's PC. Pure rules belong in `tests/` (`npm test`). Mark a step *assumed* when an earlier result covers it.
+- **Before you start** names the build to test: "the build of DD-MM-YYYY HH:MM is in the vault (`npm run vault`); reload the plugin", or "update to <version> via BRAT". The agent runs `npm run vault` itself before handing over a sitting.
 - When a release passes, remove its steps and add one dated line under Results.
 
 **If something goes wrong:** open Obsidian's console (Ctrl+Shift+I) and copy the lines starting with `[Bridge]`.
@@ -25,20 +26,22 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sitting F passed (New encounter removes the players).
 - 21-10-2026: sitting G passed (New encounter creates a webapp tracker by itself). Feedback: a player removed in IT by accident stays gone from IT. Now added back (sitting H).
 - 21-10-2026: sitting H passed. Feedback: the player added back had no HP in IT. Fixed (sitting I).
+- 21-10-2026: sitting I passed (0.6.0: a player added back keeps HP, max HP and AC).
+- 21-10-2026: sitting D (webapp crash checks from 27-09-2026) dropped: no such crashes seen since.
 
 ---
 
-## Sitting I: A player added back keeps their HP (≈ 3 min)
+## Sitting J - Sync reliability (about 10 minutes)
 
-**Before you start:** the build from `develop` is already in the desktop vault (21-10-2026); reload the plugin once. IT connected to a tracker with players and monsters.
-- [ ] I1. Ctrl+P → "Run bridge self-test". All steps pass, including the new D3.1 (a campaign character removed in IT comes back with its HP).
-- [ ] I2. In a real tracker, remove a player in IT. They come back with their HP, max HP and AC from the webapp.
-- [ ] I3. Change that player's HP in the webapp. IT follows.
+**Before you start**
+- The build of 21-10-2026 18:52 is in the vault (`npm run vault`, still says 0.6.0). Reload the plugin.
+- 21-10-2026 16:44 build: J1 passed (23, A5 skipped: test character deleted). J2 failed: a drag in IT was only seen at the next turn, then Ogg jumped back from 20 to 4. Fixed: the bridge now also watches IT's store (IT's drop fires no save event). New self-test steps R5, R6.
+- Self-test campaign set in the plugin settings (the "TEST - Arc van Noah" copy). Initiative Tracker view open.
 
-## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
+**Steps**
+- [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 26 steps passed (A5 skips without a character of yours). R5-R6 are new: drags in IT.
+- [ ] J2. Connect to a tracker in the TEST campaign with a few monsters. Drag a monster to another place in IT. Within a second the webapp should show its new initiative; don't touch anything else. Drag a player: it should jump back straight away. The bridge stays connected (green swords). A drag between two creatures with the *same* initiative may jump back: the webapp decides ties.
+- [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
+- [ ] J4. Turn wifi on. Change another monster's HP in IT. Both HP changes should now show in the webapp.
 
-Webapp fixes released with 0.5.0. They belong to the webapp, but were only listed here.
-- [ ] D1. Developer → Tech Tree → **Clear**. No crash.
-- [ ] D2. Profile → open a saved entry. No crash, and the translate button works.
-- [ ] D3. Open a campaign and switch caravans quickly. Daily orders don't crash while loading.
-- [ ] D4. Rename a caravan to a name under 3 characters. You get a clear message, not a generic error.
+If J1 fails: send the report note. If J2-J4 fail: the `[Bridge]` console lines.

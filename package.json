@@ -1,13 +1,14 @@
 {
 	"name": "obsidian-sample-plugin",
-	"version": "0.6.0",
+	"version": "0.7.0",
 	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"vault": "npm run build && node copy-to-vault.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"test": "node --test --test-reporter=spec tests/linking.test.mjs tests/bridgeRules.test.mjs tests/selfTestChecks.test.mjs tests/reconnect.test.mjs tests/connectChoices.test.mjs"
+		"test": "node --test --test-reporter=spec tests/linking.test.mjs tests/bridgeRules.test.mjs tests/selfTestChecks.test.mjs tests/reconnect.test.mjs tests/connectChoices.test.mjs tests/quietRunner.test.mjs tests/patch.test.mjs tests/itSnapshot.test.mjs"
 	},
 	"keywords": [],
 	"author": "",

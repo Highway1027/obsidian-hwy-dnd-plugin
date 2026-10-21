@@ -15,7 +15,7 @@ import {
 import { isTestCampaign, versionAtLeast, orderMismatch, editCombatant, formatReport, type StepResult } from './checks';
 
 const MIN_IT_VERSION = '13.0.17';
-// Longer than the bridge's echo window (2 s), so each action is seen as a new change.
+// Pause between steps, so each step starts from a quiet bridge.
 const SETTLE_MS = 3000;
 const WAIT_MS = 10000;
 const REPORT_PATH = 'Bridge self-test.md';
@@ -214,6 +214,104 @@ export class BridgeSelfTest {
             await this.waitFor(async () => {
                 const turn = (await this.trackerData())?.turn;
                 return turn === index ? null : `webapp turn is ${turn}, expected ${index} (${ordered[index].name})`;
+            });
+        });
+
+        await this.step('R1', 'Ten fast initiative changes in IT (like a drag) reach the webapp as the last value', async () => {
+            const writesBefore = this.bridge.trackerWrites;
+            for (let i = 1; i <= 10; i++) {
+                this.it.setCreatureInitiative(this.ids.boss, 20 + i);
+                await sleep(20);
+            }
+            await this.waitFor(async () => {
+                const list = await this.combatants();
+                const boss = list.find(c => c.obsidianId === this.ids.boss);
+                if (boss?.initiative !== 30) return `webapp Goblin Boss initiative is ${boss?.initiative}, expected 30`;
+                const names = list.map(c => c.name);
+                if (new Set(names).size !== names.length) return `a name appears twice: ${names.join(', ')}`;
+                return this.orderProblem();
+            });
+            const writes = this.bridge.trackerWrites - writesBefore;
+            if (writes > 2) throw new Error(`the bridge wrote the tracker ${writes} times for one burst (expected 1 or 2)`);
+        });
+
+        await this.step('R5', 'A monster dragged to the top in IT reaches the webapp without another change', async () => {
+            const top = this.it.getOrderedCreatures()[0];
+            if (!top || top.id === this.ids.bugbear) throw new Error('Bugbear is already at the top of IT');
+            const target = top.initiative;
+            if (!this.it.dragCreature(this.ids.bugbear, 0)) throw new Error('could not drag in IT');
+            await this.waitFor(async () => {
+                const bugbear = (await this.combatants()).find(c => c.obsidianId === this.ids.bugbear);
+                return bugbear?.initiative === target ? null : `webapp Bugbear initiative is ${bugbear?.initiative}, expected ${target}`;
+            });
+        });
+
+        await this.step('R6', 'A player dragged in IT jumps back to the webapp value without another change', async () => {
+            if (!pc) throw new SkipStep('the test campaign has no player characters');
+            const webappValue = (await this.combatants()).find(c => c.pcId === pc.characterId)?.initiative;
+            const ordered = this.it.getOrderedCreatures();
+            if (!this.it.dragCreature(this.ids.pc, ordered.length - 1)) throw new Error('could not drag in IT');
+            await this.waitFor(async () => {
+                const now = this.itById(this.ids.pc)?.initiative;
+                if (now !== webappValue) return `IT shows ${now}, webapp has ${webappValue}`;
+                return this.orderProblem();
+            });
+        });
+
+        await this.step('R2', 'A webapp change made just before the bridge writes is kept', async () => {
+            let played = false;
+            this.bridge.beforeTrackerWrite = async () => {
+                // The webapp writes while the bridge has its change ready but has not written it yet.
+                const list = await this.combatants();
+                const boss = list.find(c => c.obsidianId === this.ids.boss)!;
+                await this.webappWrite(editCombatant(list, boss.id!, { tempHp: 5 }));
+                played = true;
+            };
+            try {
+                this.it.setCreatureHP(this.ids.bugbear, 22);
+                await this.waitFor(async () => {
+                    if (!played) return 'the bridge did not write';
+                    const list = await this.combatants();
+                    const bugbear = list.find(c => c.obsidianId === this.ids.bugbear);
+                    const boss = list.find(c => c.obsidianId === this.ids.boss);
+                    if (bugbear?.hp !== 22) return `webapp Bugbear HP is ${bugbear?.hp}, expected 22`;
+                    return boss?.tempHp === 5 ? null : `the webapp's change was lost (Goblin Boss temp HP ${boss?.tempHp}, expected 5)`;
+                });
+            } finally {
+                this.bridge.beforeTrackerWrite = null;
+            }
+        });
+
+        await this.step('R3', 'A monster HP edit in IT right after a webapp turn change reaches the webapp', async () => {
+            const list = await this.combatants();
+            const ordered = webappOrder(list);
+            const turn = ordered.findIndex(c => c.obsidianId === this.ids.boss);
+            if (turn < 0) throw new Error('Goblin Boss is not in the webapp');
+            await this.webappWrite(list, { turn });
+            await this.waitFor(async () => this.itById(this.ids.boss)?.active ? null : 'the webapp turn did not reach IT');
+            // Straight after (before 0.7.0 this edit fell in a 2-second window and was lost).
+            this.it.setCreatureHP(this.ids.bugbear, 18);
+            await this.waitFor(async () => {
+                const bugbear = (await this.combatants()).find(c => c.obsidianId === this.ids.bugbear);
+                return bugbear?.hp === 18 ? null : `webapp Bugbear HP is ${bugbear?.hp}, expected 18`;
+            });
+        });
+
+        await this.step('R4', 'A webapp turn change right after a monster HP edit in IT reaches IT', async () => {
+            this.it.setCreatureHP(this.ids.boss, 16);
+            await this.waitFor(async () => {
+                const boss = (await this.combatants()).find(c => c.obsidianId === this.ids.boss);
+                return boss?.hp === 16 ? null : `webapp Goblin Boss HP is ${boss?.hp}, expected 16`;
+            });
+            // Straight after the bridge wrote (before 0.7.0 the webapp was ignored for 2 seconds then).
+            const list = await this.combatants();
+            const ordered = webappOrder(list);
+            const turn = ordered.findIndex(c => c.obsidianId === this.ids.bugbear);
+            if (turn < 0) throw new Error('Bugbear is not in the webapp');
+            await this.webappWrite(list, { turn });
+            await this.waitFor(async () => {
+                const active = this.it.getOrderedCreatures().find((c: any) => c.active);
+                return active?.id === this.ids.bugbear ? null : `IT turn is on "${active ? itName(active) : 'nobody'}", expected Bugbear`;
             });
         });
 

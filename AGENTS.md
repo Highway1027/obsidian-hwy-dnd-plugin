@@ -20,6 +20,9 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | `src/bridge/ordering.ts` | Pure turn order: copy of the webapp sort, real initiative + `manualOrder` for IT (tested) |
 | `src/bridge/removal.ts` | Pure rule: monsters removed in IT become dead in the webapp (tested) |
 | `src/bridge/fieldMapping.ts` | Stat translation between IT and the webapp |
+| `src/bridge/patch.ts` | Pure: bridge writes as patches applied to the newest tracker in a transaction; echo fingerprint (tested) |
+| `src/bridge/itSnapshot.ts` | Pure: what the webapp already knows of IT; the bridge's own IT changes fold into it (tested) |
+| `src/bridge/quietRunner.ts` | Pure: IT saves handled once IT is quiet (300 ms), one run at a time (tested) |
 | `src/bridge/BridgeStatusView.ts`, `ShareInitiativeModal.ts` | Sidebar status view, connect modal |
 | `src/bridge/TrackerPaneButton.ts` | Bridge button in IT's pane header (Obsidian `view.addAction`, IT untouched) |
 | `src/bridge/reconnect.ts` | Pure rule: one-click reconnect only to the last tracker, within 12 hours (tested) |
@@ -33,6 +36,7 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | --- | --- |
 | Watch build | `npm run dev` |
 | Production build (type check + bundle) | `npm run build` |
+| Build and copy into Tim's vault (checks the copy) | `npm run vault` (vault: `OBSIDIAN_VAULT`, else `<drive>:\Obsidian\highway-vault`) |
 | Tests | `npm test` |
 | Release | see the `plugin-release` skill |
 
@@ -40,10 +44,11 @@ If git refuses with "dubious ownership" (the desktop folder was created on anoth
 
 ## Rules
 
-- **Webapp is the source of truth** for player characters (HP, AC from D&D Beyond sync); IT is the source for monsters added in Obsidian. Never let a sync echo bounce back (echo suppression in the manager).
+- **Webapp is the source of truth** for player characters (HP, AC from D&D Beyond sync); IT is the source for monsters added in Obsidian. Never let a sync echo bounce back, and never ignore changes for a time window instead: the bridge's own IT changes go through `asOwnITChange`, its tracker writes through `commitPatch` (transaction), and webapp updates wait while an IT change is on its way (see the top of the manager).
 - **Link by id, not name**: IT id ↔ webapp `obsidianId`. Names are only a fallback for the first match (full name, or first name when unique).
 - Keep matching and mapping logic pure (in `linking.ts` / `fieldMapping.ts`) and covered by `tests/`.
 - IT internals (Svelte stores) can change with IT updates: keep all IT access inside `itPluginAccess.ts`.
+- **Newest build before every hand test:** before asking Tim to test anything in Obsidian, make sure his vault runs the code being tested: `npm run vault` for unreleased code (then he reloads the plugin), or a release he updates via BRAT. Name the build (date and time, or version) in the sitting's "Before you start". If the test also needs webapp changes, they must be deployed first; say so.
 - Webapp-side changes (Firestore rules, initiative functions) follow the webapp `AGENTS.md`.
 - Obsidian plugin basics: register listeners with `this.registerEvent`/`registerInterval` so they unload cleanly; no network calls beyond Firebase; `main.js` is build output (git-ignored).
 
@@ -54,6 +59,6 @@ Work on `develop`. Merging to `main` with a new version in `manifest.json` publi
 ## Focus, skills, writing
 
 - At session start name the top open items from `docs/STATUS.md`. When a new idea comes up mid-task, ask **"Now, or park it in the backlog?"** (small same-area fixes excepted); parked ideas go to the Inbox in `docs/STATUS.md`.
-- Skills: `plugin-release` (`.claude/skills/`; Antigravity loads it through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
-- End of a session: update `docs/STATUS.md` and `docs/TESTING.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit.
+- Skills: `plugin-release`, `plugin-wrap-up` (`.claude/skills/`; Antigravity loads them through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
+- End of a session: run the `plugin-wrap-up` skill (STATUS, TESTING, history, newest build in the vault, commit, kickstart prompt for the next chat).
 - Tim prefers plain English, short sentences, dates as DD-MM-YYYY.

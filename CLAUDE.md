@@ -2,5 +2,5 @@
 
 ## Claude Code notes
 
-- Skill: `/plugin-release`.
+- Skills: `/plugin-release`, `/plugin-wrap-up`.
 - Webapp context (initiative tracker, Firestore rules) is in `<drive>:\Webapps\wildshape-tracker\AGENTS.md`.
