@@ -97,6 +97,34 @@ describe('monsters removed in Initiative Tracker', () => {
     });
 });
 
+describe('player characters removed in Initiative Tracker', () => {
+    it('returns the webapp PC of a removed IT player, by linked id', () => {
+        const combatants = [pc('c1', 'Ogg of the Cragmaw tribe', { obsidianId: 'p1' }), monster('m1', 'Goblin', { obsidianId: 'g1' })];
+        const restore = B.playersToRestore(combatants, [
+            { id: 'p1', name: 'Ogg', player: true },
+            { id: 'g1', name: 'Goblin', player: false },
+        ]);
+        assert.deepEqual(restore.map(c => c.name), ['Ogg of the Cragmaw tribe']);
+    });
+
+    it('falls back to the name only when the PC is not linked', () => {
+        const combatants = [pc('c1', 'Ayla'), pc('c2', 'Brom', { obsidianId: 'other' })];
+        const restore = B.playersToRestore(combatants, [
+            { id: 'x1', name: 'Ayla', player: true },
+            { id: 'x2', name: 'Brom', player: true },
+        ]);
+        assert.deepEqual(restore.map(c => c.name), ['Ayla']);
+    });
+
+    it('leaves out player summons and players the webapp does not have', () => {
+        const combatants = [monster('s1', 'Wolf', { type: 'Summon', isPlayerSummon: true, obsidianId: 'w1' })];
+        assert.deepEqual(B.playersToRestore(combatants, [
+            { id: 'w1', name: 'Wolf', player: true },
+            { id: 'zz', name: 'Stranger', player: true },
+        ]), []);
+    });
+});
+
 describe('real initiative numbers in Initiative Tracker', () => {
     it('sorts like the webapp (initiative, modifier, dex, players first, tie breaker, id)', () => {
         const list = [

@@ -10,7 +10,7 @@ import {
     type CaravanPc, type ItCreatureRef
 } from './linking';
 import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
-import { markRemovedMonstersDead, type RemovedCreature } from './removal';
+import { markRemovedMonstersDead, playersToRestore, type RemovedCreature } from './removal';
 import type { TrackerSummary } from './connectChoices';
 import {
     doc, getDoc, setDoc, updateDoc, collection,
@@ -811,6 +811,7 @@ export class InitiativeBridgeManager {
                 if (Date.now() < this.suppressITUntil) {
                     // Webapp changes arrive all the time (players' HP), so a DM removal in this
                     // window must not be lost with the echo.
+                    this.restoreRemovedPlayers();
                     this.writeRemovedMonsterDeaths();
                     this.snapshotITState();
                     return;
@@ -880,6 +881,33 @@ export class InitiativeBridgeManager {
         return [...this.lastITCreatureMap.entries()]
             .filter(([id]) => !liveIds.has(id))
             .map(([id, s]) => ({ id, name: s.name, player: s.player }));
+    }
+
+    /**
+     * A player character removed in IT is a mistake (PCs belong to the webapp): add it back
+     * from the webapp, with the webapp's HP and initiative (removal.playersToRestore).
+     */
+    private restoreRemovedPlayers(): void {
+        const removed = this.removedSinceSnapshot().filter(r => r.player);
+        if (removed.length === 0 || !this.lastFirestoreState) return;
+        const restore = playersToRestore(this.lastFirestoreState.combatants || [], removed);
+
+        // Forget the removed ids now, so the save-state that follows the re-add (or an
+        // overlapping IT update) does not restore them a second time.
+        for (const r of removed) {
+            this.lastITCreatureIds.delete(r.id);
+            this.lastITCreatureMap.delete(r.id);
+        }
+        if (restore.length === 0) return;
+
+        const names = restore.map(c => c.name).join(', ');
+        console.log(`[Bridge] Player removed in IT, added back: ${names}`);
+        new Notice(`Players belong to the webapp, so ${names} was added back in IT. Remove players in the webapp.`);
+        // Add after IT finished its own update, outside its save-state event.
+        window.setTimeout(() => {
+            if (!this._isConnected) return;
+            for (const c of restore) this.handleNewCombatantFromFirestore(c);
+        }, 0);
     }
 
     /** Monsters the DM removed in IT become dead in the webapp (removal.ts). */
@@ -990,7 +1018,8 @@ export class InitiativeBridgeManager {
 
         // --- Creatures removed in IT ---
         // Never removed from Firestore (a new encounter must not wipe the tracker), but a
-        // removed monster is beaten: it becomes dead in the webapp. PCs stay as they are.
+        // removed monster is beaten: it becomes dead in the webapp. PCs are put back in IT.
+        this.restoreRemovedPlayers();
         const killed = markRemovedMonstersDead(currentFirestoreCombatants, this.removedSinceSnapshot(), this.lastFirestoreState?.round);
         if (killed.length > 0) {
             needsFullCombatantUpdate = true;

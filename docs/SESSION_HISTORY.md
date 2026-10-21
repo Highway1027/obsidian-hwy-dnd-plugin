@@ -2,6 +2,13 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - A player removed in IT comes back
+
+- Tim passed sitting G. Feedback: the DM can remove a PC in IT by accident; the webapp keeps it (correct), but IT loses it.
+- Now: `removal.playersToRestore` finds the webapp PCs of removed IT players (player summons left out: dismissing one is normal); the manager adds them back via `handleNewCombatantFromFirestore` (webapp HP and initiative, first name) with a Notice. Runs in both the normal and the echo-window save path.
+- Gotcha: the removed id is dropped from the IT snapshot at once, so the save-state that follows the re-add does not restore it twice. The re-add runs in a `setTimeout(0)`, outside IT's own event.
+- Self-test D3 now also checks the player is back in IT with a new linked id. Build copied to the vault; sitting H.
+
 ## 21-10-2026 - New encounter: players removed, new tracker by itself
 
 - Tim passed sittings B, C and E. Feedback: IT's "New encounter" keeps the players with last fight's initiative.

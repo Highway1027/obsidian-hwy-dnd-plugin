@@ -37,3 +37,23 @@ export function markRemovedMonstersDead(
     }
     return killed;
 }
+
+/**
+ * Player characters belong to the webapp, so removing one in IT is a mistake: the bridge
+ * puts them back. Returns the webapp player characters of the removed IT players (by linked
+ * id, else name when unlinked). Player summons are left out: dismissing a summon is normal.
+ */
+export function playersToRestore(
+    combatants: WebappCombatant[],
+    removed: RemovedCreature[],
+): WebappCombatant[] {
+    const restore: WebappCombatant[] = [];
+    for (const creature of removed) {
+        if (!creature.player) continue;
+        const combatant = combatants.find(c => c.obsidianId === creature.id)
+            ?? combatants.find(c => !c.obsidianId && c.name === creature.name);
+        if (!combatant || combatant.type !== 'Player Character' || restore.includes(combatant)) continue;
+        restore.push(combatant);
+    }
+    return restore;
+}
