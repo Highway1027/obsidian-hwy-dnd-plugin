@@ -130,3 +130,11 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+/* Initiative Bridge button in IT's pane header: green when connected, red when off */
+.view-action.hwy-bridge-on {
+    color: var(--color-green);
+}
+
+.view-action.hwy-bridge-off {
+    color: var(--color-red);
+}

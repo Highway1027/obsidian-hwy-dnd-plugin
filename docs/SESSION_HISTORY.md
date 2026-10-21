@@ -2,6 +2,14 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - Review, bridge button in the IT pane
+
+- Code review: structure sound; main weak spot is time-based echo suppression (real changes in the 2 s window are lost) plus parallel IT-save writes (drag-and-drop issue). Parked in the Inbox as "sync reliability".
+- New: bridge button in IT's pane header via Obsidian's `view.addAction` (`TrackerPaneButton.ts`), so IT's code and DOM are untouched. IT 13.0.18 puts no header actions of its own.
+- One-click reconnect (`reconnect.ts`, tested): only to the last tracker, only within 12 h of the last connect, so next week's fight is never merged into last week's tracker. The self-test's test tracker is never remembered.
+- New encounter: the manager calls `onNewEncounter`; main.ts clears the last tracker and shows a sticky notice with "Create a new webapp tracker for this encounter".
+- Not tested in Obsidian yet (sitting D).
+
 ## 21-10-2026 - Self-test runs, fixes, release 0.5.2
 
 - Run in Obsidian: 16 passed, C1 + A3 failed, A5 skipped. Cause: the TEST campaign is a copy of Arc van Noah, whose real character is "Ogg of the Cragmaw tribe", the same name the self-test used for its made-up PC. C1 then read the real Ogg's link; on reconnect the made-up Ogg got its full name (clash with "Ogg the Younger") and IT showed the name twice.

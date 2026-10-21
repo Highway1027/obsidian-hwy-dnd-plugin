@@ -33,6 +33,17 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - [ ] B4. Add new monsters, connect with **Create new tracker**. Open it in the webapp as DM: DM view, hidden monsters included.
 - [ ] B5. Close the IT pane. The bridge disconnects after about 1.5 seconds.
 
+## Sitting D: Bridge button in the IT pane (≈ 5 min)
+
+**Before you start:** a plugin build from `develop` with the IT pane button (not released yet). The IT pane open, with players and a monster.
+- [ ] D1. Look at the top right of the IT pane header. A red swords icon; hover says "Connect to the webapp".
+- [ ] D2. Click it (first time today). The connect window opens. Connect to a tracker. The icon turns green.
+- [ ] D3. Click the green icon. The Bridge Status panel opens on the right.
+- [ ] D4. Disconnect, then click the red icon again. It reconnects straight away to the same tracker, with no window ("Bridge reconnected to ...").
+- [ ] D5. Ctrl+P → "Share Initiative to Webapp". The last tracker is already selected, marked "(last used)". Click it again: it is deselected.
+- [ ] D6. While connected, click **New encounter** in IT. A message stays with the button "Create a new webapp tracker for this encounter". Click it: a new tracker "Combat - ..." appears in the webapp, the icon is green.
+- [ ] D7. Close the IT pane and open it again. The icon is still there (one, not two).
+
 ## Sitting C: The DM's PC (≈ 2 min, at the next session)
 
 **Before you start:** the next plugin release is installed on the DM's PC.

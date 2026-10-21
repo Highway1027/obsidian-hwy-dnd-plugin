@@ -9,6 +9,7 @@ interface PluginSettings {
     apiToken: string;
     caravanId: string;
     lastUsedCaravanId: string;
+    lastTrackerId: string;
     enableInitiativeBridge: boolean;
 }
 
@@ -96,7 +97,7 @@ export class ShareInitiativeModal extends Modal {
         if (this.activeTrackers.length > 0) {
             container.createEl('h3', { text: 'Existing Trackers' });
             container.createEl('p', {
-                text: 'Select a tracker to merge your initiative, or create a new one.',
+                text: 'Select a tracker to merge your initiative, or create a new one (click a selected tracker again to deselect it).',
                 cls: 'hwy-subtitle'
             });
 
@@ -120,16 +121,33 @@ export class ShareInitiativeModal extends Modal {
                 infoEl.style.opacity = '0.7';
                 infoEl.style.fontSize = '0.9em';
 
-                trackerEl.addEventListener('click', () => {
+                const select = () => {
                     // Deselect all
                     trackerList.querySelectorAll('.hwy-tracker-item').forEach(el => {
                         (el as HTMLElement).style.backgroundColor = '';
+                        (el as HTMLElement).style.color = '';
                     });
                     // Select this one
                     trackerEl.style.backgroundColor = 'var(--interactive-accent)';
                     trackerEl.style.color = 'var(--text-on-accent)';
                     this.selectedTrackerId = tracker.id;
+                };
+                trackerEl.addEventListener('click', () => {
+                    if (this.selectedTrackerId !== tracker.id) {
+                        select();
+                        return;
+                    }
+                    // Click again: deselect, so Connect creates a new tracker.
+                    trackerEl.style.backgroundColor = '';
+                    trackerEl.style.color = '';
+                    this.selectedTrackerId = null;
                 });
+
+                // The tracker used last time is selected already, so reconnecting is one click on Connect.
+                if (tracker.id === this.settings.lastTrackerId) {
+                    trackerEl.createSpan({ text: ' (last used)', cls: 'hwy-tracker-info' }).style.opacity = '0.7';
+                    select();
+                }
             }
 
             // Separator

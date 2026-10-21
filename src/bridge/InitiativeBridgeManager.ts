@@ -102,7 +102,9 @@ export class InitiativeBridgeManager {
     private warnedUnlinkedPlayers: Set<string> = new Set();
 
     // Status change callback for UI components (status bar, sidebar)
-    public onStatusChange: ((connected: boolean, info?: { trackerName?: string; caravanId?: string }) => void) | null = null;
+    public onStatusChange: ((connected: boolean, info?: { trackerName?: string; caravanId?: string; trackerId?: string }) => void) | null = null;
+    // A new encounter started in IT and the bridge disconnected (main.ts offers a new tracker)
+    public onNewEncounter: (() => void) | null = null;
 
     get isConnected(): boolean {
         return this._isConnected;
@@ -276,7 +278,7 @@ export class InitiativeBridgeManager {
             await this.loadCaravanPcs(caravanId);
         }
 
-        this.onStatusChange?.(true, { caravanId });
+        this.onStatusChange?.(true, { caravanId, trackerId });
 
         // Store initial IT creature state
         this.snapshotITState();
@@ -784,12 +786,7 @@ export class InitiativeBridgeManager {
                 if (!this._isConnected || this.isDisconnecting) return;
 
                 if (this.isNewEncounter(state)) {
-                    new Notice(
-                        'New encounter in Obsidian — bridge disconnected from the old webapp tracker.\n' +
-                        'Connect again to link this encounter; players are linked to their characters automatically.',
-                        10000
-                    );
-                    this.disconnect();
+                    this.disconnect().then(() => this.onNewEncounter?.());
                     return;
                 }
 
@@ -823,8 +820,7 @@ export class InitiativeBridgeManager {
             'initiative-tracker:start-encounter',
             () => {
                 if (this._isConnected) {
-                    new Notice('New encounter started — bridge disconnecting');
-                    this.disconnect();
+                    this.disconnect().then(() => this.onNewEncounter?.());
                 }
             }
         );

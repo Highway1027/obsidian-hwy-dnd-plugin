@@ -6,6 +6,9 @@ import { ShareInitiativeModal } from './src/bridge/ShareInitiativeModal';
 import { BridgeStatusView, BRIDGE_STATUS_VIEW_TYPE } from './src/bridge/BridgeStatusView';
 import { signOutFirebase } from './src/firebase';
 import { BridgeSelfTest, SelfTestConfirmModal } from './src/selftest/BridgeSelfTest';
+import { TrackerPaneButtons } from './src/bridge/TrackerPaneButton';
+import { quickReconnectTarget } from './src/bridge/reconnect';
+import { authenticateWithApiToken, isAuthenticated } from './src/firebase';
 
 // Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
@@ -22,6 +25,8 @@ interface HwysDnDToolsSettings {
     };
     enableInitiativeBridge: boolean;
     lastUsedCaravanId: string;
+    lastTrackerId: string;
+    lastTrackerConnectedAt: number;
     selfTestCaravanId: string;
 }
 
@@ -40,6 +45,8 @@ const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
     },
     enableInitiativeBridge: false,
     lastUsedCaravanId: '',
+    lastTrackerId: '',
+    lastTrackerConnectedAt: 0,
     selfTestCaravanId: '',
 }
 
@@ -48,6 +55,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
     settings: HwysDnDToolsSettings;
     bridgeManager: InitiativeBridgeManager | null = null;
     private statusBarEl: HTMLElement | null = null;
+    private paneButtons: TrackerPaneButtons | null = null;
 
     // This function runs when the plugin is first loaded.
     async onload() {
@@ -264,7 +272,20 @@ export default class HwysDnDToolsPlugin extends Plugin {
                             : '🔴 Bridge: Off'
                     );
                 }
+                // Remember the tracker for the one-click reconnect (never the self-test's test copy).
+                if (connected && info?.trackerId && info.caravanId !== this.settings.selfTestCaravanId) {
+                    this.settings.lastTrackerId = info.trackerId;
+                    this.settings.lastTrackerConnectedAt = Date.now();
+                    this.saveSettings();
+                }
+                this.refreshPaneButtons();
             };
+            this.bridgeManager.onNewEncounter = () => this.offerTrackerForNewEncounter();
+
+            // Bridge button in the header of IT's tracker pane
+            this.paneButtons = new TrackerPaneButtons(this.app, () => this.onPaneButtonClick());
+            this.registerEvent(this.app.workspace.on('layout-change', () => this.refreshPaneButtons()));
+            this.app.workspace.onLayoutReady(() => this.refreshPaneButtons());
 
             // Register sidebar view
             this.registerView(
@@ -326,6 +347,91 @@ export default class HwysDnDToolsPlugin extends Plugin {
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
     }
 
+    private refreshPaneButtons(): void {
+        this.paneButtons?.refresh({
+            connected: this.bridgeManager?.isConnected ?? false,
+            trackerName: this.bridgeManager?.trackerName ?? null,
+        });
+    }
+
+    /** Connected: show the status panel. Off: reconnect to the last tracker, or open the connect window. */
+    private async onPaneButtonClick(): Promise<void> {
+        if (this.bridgeManager?.isConnected) {
+            await this.toggleBridgeSidebar();
+            return;
+        }
+        if (await this.quickReconnect()) return;
+        this.openShareModal();
+    }
+
+    private async ensureSignedIn(): Promise<boolean> {
+        if (!this.settings.apiToken) {
+            new Notice('Error: API Token not set. Please add it in the plugin settings.');
+            return false;
+        }
+        if (!isAuthenticated()) await authenticateWithApiToken(this.settings.apiToken);
+        return true;
+    }
+
+    /** Reconnect without asking when the last tracker was used shortly ago (reconnect.ts). */
+    private async quickReconnect(): Promise<boolean> {
+        const caravanId = this.settings.lastUsedCaravanId || this.settings.defaultCaravanId;
+        if (!this.bridgeManager || !caravanId || !this.settings.lastTrackerId) return false;
+        try {
+            if (!await this.ensureSignedIn()) return true;
+            const trackers = await this.bridgeManager.fetchActiveTrackers(caravanId);
+            const target = quickReconnectTarget(
+                { trackerId: this.settings.lastTrackerId, connectedAt: this.settings.lastTrackerConnectedAt },
+                trackers,
+                Date.now()
+            );
+            if (!target) return false;
+            await this.bridgeManager.mergeWithExistingTracker(caravanId, target.id);
+            await this.bridgeManager.connect(caravanId, target.id);
+            new Notice(`🟢 Bridge reconnected to "${target.name}"`);
+            return true;
+        } catch (err) {
+            console.error('[Bridge] Quick reconnect failed:', err);
+            new Notice(`❌ Reconnect failed: ${String(err)}`, 8000);
+            return true;
+        }
+    }
+
+    /** After IT's "New encounter": offer a fresh webapp tracker instead of the old one. */
+    private offerTrackerForNewEncounter(): void {
+        // The old tracker belongs to the last fight; the pane button must not reconnect to it.
+        this.settings.lastTrackerId = '';
+        this.settings.lastTrackerConnectedAt = 0;
+        this.saveSettings();
+
+        const fragment = createFragment(f => {
+            f.createDiv({ text: 'New encounter in Obsidian. The bridge disconnected from the old webapp tracker.' });
+            const button = f.createEl('button', { text: 'Create a new webapp tracker for this encounter', cls: 'mod-cta' });
+            button.style.marginTop = '8px';
+            button.addEventListener('click', () => this.createTrackerForEncounter());
+        });
+        new Notice(fragment, 0);   // stays until the DM clicks it
+    }
+
+    private async createTrackerForEncounter(): Promise<void> {
+        const caravanId = this.settings.lastUsedCaravanId || this.settings.defaultCaravanId;
+        if (!this.bridgeManager || !caravanId) {
+            this.openShareModal();
+            return;
+        }
+        try {
+            if (!await this.ensureSignedIn()) return;
+            const now = new Date();
+            const name = `Combat - ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            const trackerId = await this.bridgeManager.createNewTracker(caravanId, name);
+            await this.bridgeManager.connect(caravanId, trackerId);
+            new Notice(`🟢 Bridge connected to new tracker "${name}"`);
+        } catch (err) {
+            console.error('[Bridge] Creating a tracker for the new encounter failed:', err);
+            new Notice(`❌ Could not create the tracker: ${String(err)}`, 8000);
+        }
+    }
+
     private openShareModal(): void {
         if (!this.settings.apiToken) {
             new Notice('Error: API Token not set. Please add it in the plugin settings.');
@@ -340,6 +446,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
                 apiToken: this.settings.apiToken,
                 caravanId: this.settings.defaultCaravanId,
                 lastUsedCaravanId: this.settings.lastUsedCaravanId,
+                lastTrackerId: this.settings.lastTrackerId,
                 enableInitiativeBridge: this.settings.enableInitiativeBridge,
             },
             this.bridgeManager,
@@ -463,6 +570,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
     }
 
     async onunload() {
+        this.paneButtons?.removeAll();
         // Disconnect bridge on plugin unload
         if (this.bridgeManager?.isConnected) {
             await this.bridgeManager.disconnect();

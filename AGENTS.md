@@ -21,6 +21,8 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | `src/bridge/removal.ts` | Pure rule: monsters removed in IT become dead in the webapp (tested) |
 | `src/bridge/fieldMapping.ts` | Stat translation between IT and the webapp |
 | `src/bridge/BridgeStatusView.ts`, `ShareInitiativeModal.ts` | Sidebar status view, connect modal |
+| `src/bridge/TrackerPaneButton.ts` | Bridge button in IT's pane header (Obsidian `view.addAction`, IT untouched) |
+| `src/bridge/reconnect.ts` | Pure rule: one-click reconnect only to the last tracker, within 12 hours (tested) |
 | `src/selftest/BridgeSelfTest.ts` | Command "Run bridge self-test": plays webapp and DM in a webapp test copy only (`isTestCopy` + "TEST - " name), writes the note `Bridge self-test.md` |
 | `src/selftest/checks.ts` | Pure self-test helpers: test-campaign guard, order compare, report (tested) |
 
