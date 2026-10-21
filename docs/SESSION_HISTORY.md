@@ -2,13 +2,13 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
-## 21-10-2026 - New encounter removes the players
+## 21-10-2026 - New encounter: players removed, new tracker by itself
 
 - Tim passed sittings B, C and E. Feedback: IT's "New encounter" keeps the players with last fight's initiative.
-- First fix kept the players and cleared their initiative (Tim found it buggy). Tim's call: always remove them, because the webapp adds the adventuring party in one click, and the bridge brings those PCs into IT (first names, linked by id).
-- Now: after the disconnect `itPluginAccess.removePlayers()` empties IT of players. Also on IT's `start-encounter` event. Not hand-tested yet: sitting F.
+- First fix kept the players and cleared their initiative (it looked buggy, but the vault still ran the old build). Tim's call: always remove them, because the webapp adds the adventuring party in one click, and the bridge brings those PCs into IT (first names, linked by id).
+- Now: after the disconnect `itPluginAccess.removePlayers()` empties IT of players. Also on IT's `start-encounter` event. Tim passed it (sitting F).
 - Gotcha: Tim's first test still showed the players because the vault (`D:\Obsidian\highway-vault\.obsidian\plugins\highway-dnd-tools`) still had the 14:43 build. After `npm run build`, copy `main.js`, `manifest.json` and `styles.css` there, then reload the plugin.
-- Tim passed F. Then: New encounter while connected no longer shows a button; main.ts `startTrackerForNewEncounter` creates and connects a new tracker right away (forgets the old one for the pane button). New build copied to the vault; sitting G.
+- Then: New encounter while connected no longer shows a button; main.ts `startTrackerForNewEncounter` creates and connects a new tracker right away (forgets the old one for the pane button). New build copied to the vault; sitting G.
 
 ## 21-10-2026 - Review, bridge button in the IT pane
 
