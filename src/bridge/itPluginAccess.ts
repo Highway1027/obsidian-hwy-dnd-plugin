@@ -319,6 +319,42 @@ export class ITPluginAccess {
         return store.getOrderedCreatures();
     }
 
+    /**
+     * Call `onChange` whenever IT's creature store changes. IT's drag-and-drop sets the
+     * store directly and fires no save-state event (IT 13.0.18), so the bridge needs this too.
+     * Returns the unsubscribe function, or null when the store can't be reached.
+     */
+    onStoreChange(onChange: () => void): (() => void) | null {
+        const store = this.getTrackerStore();
+        if (typeof store?.subscribe !== 'function') return null;
+        let first = true;
+        // A Svelte store calls the subscriber straight away with the current value; skip that call.
+        return store.subscribe(() => {
+            if (first) { first = false; return; }
+            onChange();
+        });
+    }
+
+    /**
+     * Drag a creature to `toIndex` the way IT's drop handler does (IT 13.0.18): it takes the
+     * initiative of the creature below (above when dropped last), every creature gets its
+     * position as manualOrder, and the store is set without a save-state event. Self-test only.
+     */
+    dragCreature(key: string, toIndex: number): boolean {
+        const store = this.getTrackerStore();
+        const creature = this.findCreature(key);
+        if (typeof store?.set !== 'function' || !creature) return false;
+        const list = this.getOrderedCreatures().filter((c: any) => c !== creature);
+        const index = Math.max(0, Math.min(toIndex, list.length));
+        list.splice(index, 0, creature);
+        if (list.length > 1) {
+            creature.initiative = index === list.length - 1 ? list[index - 1].initiative : list[index + 1].initiative;
+        }
+        list.forEach((c: any, i: number) => { c.manualOrder = i; });
+        store.set(list);
+        return true;
+    }
+
     /** Is an Initiative Tracker view open anywhere in the workspace? */
     isTrackerViewOpen(): boolean {
         return this.app.workspace.getLeavesOfType(IT_TRACKER_VIEW_TYPE).length > 0;

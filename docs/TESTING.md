@@ -34,12 +34,13 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 ## Sitting J - Sync reliability (about 10 minutes)
 
 **Before you start**
-- The build of 21-10-2026 16:44 is in the vault (`npm run vault`, still says 0.6.0). Reload the plugin.
+- The build of 21-10-2026 18:52 is in the vault (`npm run vault`, still says 0.6.0). Reload the plugin.
+- 21-10-2026 16:44 build: J1 passed (23, A5 skipped: test character deleted). J2 failed: a drag in IT was only seen at the next turn, then Ogg jumped back from 20 to 4. Fixed: the bridge now also watches IT's store (IT's drop fires no save event). New self-test steps R5, R6.
 - Self-test campaign set in the plugin settings (the "TEST - Arc van Noah" copy). Initiative Tracker view open.
 
 **Steps**
-- [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 24 steps passed. R1-R4 are new: fast changes, a webapp change in between, and the old 2-second windows.
-- [ ] J2. Connect to a tracker in the TEST campaign with a few monsters. Drag a monster to another place in IT. The bridge should stay connected (green swords). The webapp should show that monster's new initiative. A drag between two creatures with the *same* initiative may jump back: the webapp decides ties.
+- [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 26 steps passed (A5 skips without a character of yours). R5-R6 are new: drags in IT.
+- [ ] J2. Connect to a tracker in the TEST campaign with a few monsters. Drag a monster to another place in IT. Within a second the webapp should show its new initiative; don't touch anything else. Drag a player: it should jump back straight away. The bridge stays connected (green swords). A drag between two creatures with the *same* initiative may jump back: the webapp decides ties.
 - [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
 - [ ] J4. Turn wifi on. Change another monster's HP in IT. Both HP changes should now show in the webapp.
 

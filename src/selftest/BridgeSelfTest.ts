@@ -235,6 +235,29 @@ export class BridgeSelfTest {
             if (writes > 2) throw new Error(`the bridge wrote the tracker ${writes} times for one burst (expected 1 or 2)`);
         });
 
+        await this.step('R5', 'A monster dragged to the top in IT reaches the webapp without another change', async () => {
+            const top = this.it.getOrderedCreatures()[0];
+            if (!top || top.id === this.ids.bugbear) throw new Error('Bugbear is already at the top of IT');
+            const target = top.initiative;
+            if (!this.it.dragCreature(this.ids.bugbear, 0)) throw new Error('could not drag in IT');
+            await this.waitFor(async () => {
+                const bugbear = (await this.combatants()).find(c => c.obsidianId === this.ids.bugbear);
+                return bugbear?.initiative === target ? null : `webapp Bugbear initiative is ${bugbear?.initiative}, expected ${target}`;
+            });
+        });
+
+        await this.step('R6', 'A player dragged in IT jumps back to the webapp value without another change', async () => {
+            if (!pc) throw new SkipStep('the test campaign has no player characters');
+            const webappValue = (await this.combatants()).find(c => c.pcId === pc.characterId)?.initiative;
+            const ordered = this.it.getOrderedCreatures();
+            if (!this.it.dragCreature(this.ids.pc, ordered.length - 1)) throw new Error('could not drag in IT');
+            await this.waitFor(async () => {
+                const now = this.itById(this.ids.pc)?.initiative;
+                if (now !== webappValue) return `IT shows ${now}, webapp has ${webappValue}`;
+                return this.orderProblem();
+            });
+        });
+
         await this.step('R2', 'A webapp change made just before the bridge writes is kept', async () => {
             let played = false;
             this.bridge.beforeTrackerWrite = async () => {

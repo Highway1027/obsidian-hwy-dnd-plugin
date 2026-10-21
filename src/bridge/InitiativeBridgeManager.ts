@@ -91,6 +91,7 @@ export class InitiativeBridgeManager {
     private firestoreUnsubscribe: Unsubscribe | null = null;
     private characterUnsubscribes: Unsubscribe[] = [];
     private itEventRefs: any[] = [];
+    private itStoreUnsubscribe: (() => void) | null = null;
     private trackerCloseTimer: number | null = null;
     // Handles IT saves one at a time, after IT is quiet
     private itRunner: QuietRunner | null = null;
@@ -397,6 +398,8 @@ export class InitiativeBridgeManager {
             this.app.workspace.offref(ref);
         }
         this.itEventRefs = [];
+        this.itStoreUnsubscribe?.();
+        this.itStoreUnsubscribe = null;
         this.itRunner?.stop();
         this.itRunner = null;
         if (this.trackerCloseTimer !== null) {
@@ -924,6 +927,13 @@ export class InitiativeBridgeManager {
             }
         );
         this.itEventRefs.push(saveRef);
+
+        // A drag-and-drop in IT changes the store without a save-state event.
+        this.itStoreUnsubscribe = this.itAccess.onStoreChange(() => {
+            if (!this._isConnected || this.isDisconnecting) return;
+            this.itRunner?.schedule();
+        });
+        if (!this.itStoreUnsubscribe) console.warn('[Bridge] Could not watch IT\'s store: drags in IT are only seen with the next change');
 
         // Disconnect when the tracker view itself closes. (IT's 'stop-viewing' event
         // belongs to the statblock pane, so it is not used here.)
