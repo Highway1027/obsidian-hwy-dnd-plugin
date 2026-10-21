@@ -2,6 +2,14 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - Sync reliability (develop, not released)
+
+- Tim approved the three parts, built in the order 2, 3, 1 (one commit each). (2) `quietRunner.ts`: IT saves handled after 300 ms of quiet, never two runs at once. (3) `patch.ts`: every bridge write is a field patch applied to the newest tracker in a transaction, via `commitPatch` (link pass too). The webapp already used transactions, so no rules change.
+- (1) Echo windows removed. The bridge's own IT changes run in `asOwnITChange` and fold into the IT snapshot (`itSnapshot.ts`). Its own writes are remembered as "read → wrote" fingerprints, and a matching webapp update is skipped. Webapp updates wait while an IT run is pending.
+- Decisions: transactions fail offline (notice, resent with the next IT change). Self-test-only hook `beforeTrackerWrite`. Turn/death/revive from the webapp only act when IT differs.
+- Gotcha: an IT run must snapshot IT at its *start*: a snapshot after the write swallows DM edits made during it. Two quick DM turn clicks were the reason for the fingerprint echo check.
+- Self-test R1-R4 added (not yet run: needs Tim's vault). 72 unit tests and build pass; build copied to the vault. Sitting J.
+
 ## 21-10-2026 - Testing cleanup
 
 - Tim passed sitting I (0.6.0: a player added back keeps HP, max HP and AC). Sitting D (webapp crash checks from 27-09-2026) dropped: it never belonged here, and Tim has seen no such crashes since. No open hand tests.

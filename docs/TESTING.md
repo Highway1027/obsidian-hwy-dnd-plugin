@@ -1,6 +1,6 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing. Everything below can wait for a convenient moment.
+**Blocking right now:** nothing for development. Release 0.7.0 waits for sitting J.
 
 Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 21-10-2026.
 
@@ -31,4 +31,16 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 ---
 
-No open sittings.
+## Sitting J - Sync reliability (about 10 minutes)
+
+**Before you start**
+- The build of 21-10-2026 16:44 is in the vault (`npm run vault`, still says 0.6.0). Reload the plugin.
+- Self-test campaign set in the plugin settings (the "TEST - Arc van Noah" copy). Initiative Tracker view open.
+
+**Steps**
+- [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 24 steps passed. R1-R4 are new: fast changes, a webapp change in between, and the old 2-second windows.
+- [ ] J2. Connect to a tracker in the TEST campaign with a few monsters. Drag a monster to another place in IT. The bridge should stay connected (green swords). The webapp should show that monster's new initiative. A drag between two creatures with the *same* initiative may jump back: the webapp decides ties.
+- [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
+- [ ] J4. Turn wifi on. Change another monster's HP in IT. Both HP changes should now show in the webapp.
+
+If J1 fails: send the report note. If J2-J4 fail: the `[Bridge]` console lines.
