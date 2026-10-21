@@ -26,7 +26,8 @@ export class ShareInitiativeModal extends Modal {
     // State
     private trackers: TrackerSummary[] = [];
     private choice: string = NEW_TRACKER;   // NEW_TRACKER or a tracker id
-    private newTrackerName: string = '';
+    private newTrackerName: string = '';     // typed by the DM; empty = defaultName
+    private defaultName: string = '';
     private connectBtn: HTMLButtonElement | null = null;
 
     constructor(
@@ -84,7 +85,8 @@ export class ShareInitiativeModal extends Modal {
 
     private render(container: HTMLElement, caravanId: string, caravanName: string | null): void {
         const now = Date.now();
-        this.newTrackerName = defaultTrackerName(new Date(now));
+        this.newTrackerName = '';
+        this.defaultName = defaultTrackerName(new Date(now));
         this.choice = defaultChoice(
             this.trackers,
             { trackerId: this.settings.lastTrackerId, connectedAt: this.settings.lastTrackerConnectedAt },
@@ -120,10 +122,14 @@ export class ShareInitiativeModal extends Modal {
             return body;
         };
 
-        // 1. A new tracker, with its name editable in place.
+        // 1. A new tracker. The name field starts empty with the date and time greyed out
+        //    behind it, so the DM can type a name straight away or leave it as is.
         const newBody = addOption(NEW_TRACKER);
         newBody.createDiv({ cls: 'hwy-connect-option-title', text: 'New tracker for this encounter' });
-        const nameInput = newBody.createEl('input', { type: 'text', cls: 'hwy-connect-name', value: this.newTrackerName });
+        newBody.createDiv({ cls: 'hwy-connect-name-label', text: 'Name (optional)' });
+        const nameInput = newBody.createEl('input', {
+            type: 'text', cls: 'hwy-connect-name', attr: { placeholder: this.defaultName },
+        });
         nameInput.addEventListener('focus', () => select(NEW_TRACKER));
         nameInput.addEventListener('input', () => {
             this.newTrackerName = nameInput.value;
@@ -157,6 +163,8 @@ export class ShareInitiativeModal extends Modal {
         this.connectBtn.addEventListener('click', () => this.handleConnect(caravanId));
 
         select(this.choice);
+        // Preselected new tracker: the cursor waits in the name field.
+        if (this.choice === NEW_TRACKER) window.setTimeout(() => nameInput.focus(), 0);
     }
 
     /** The button says what will happen. */
@@ -164,7 +172,7 @@ export class ShareInitiativeModal extends Modal {
         if (!this.connectBtn) return;
         if (this.choice === NEW_TRACKER) {
             this.connectBtn.setText('Create & connect');
-            this.connectBtn.disabled = this.newTrackerName.trim() === '';
+            this.connectBtn.disabled = false;
         } else {
             const tracker = this.trackers.find(t => t.id === this.choice);
             this.connectBtn.setText(`Connect to "${tracker?.name ?? 'tracker'}"`);
@@ -175,8 +183,7 @@ export class ShareInitiativeModal extends Modal {
     private async handleConnect(caravanId: string): Promise<void> {
         const { contentEl } = this;
         const choice = this.choice;
-        const name = this.newTrackerName.trim();
-        if (choice === NEW_TRACKER && !name) return;
+        const name = this.newTrackerName.trim() || this.defaultName;
 
         contentEl.empty();
         contentEl.createEl('p', { text: '⏳ Setting up the bridge...' });

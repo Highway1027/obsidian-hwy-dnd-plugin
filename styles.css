@@ -209,9 +209,15 @@
     color: var(--text-on-accent);
 }
 
+.hwy-connect-name-label {
+    margin-top: 6px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
 .hwy-connect-name {
     width: 100%;
-    margin-top: 6px;
+    margin-top: 2px;
 }
 
 .hwy-share-initiative-modal .hwy-button-container {

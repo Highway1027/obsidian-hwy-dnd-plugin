@@ -33,6 +33,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - [ ] H1. Ctrl+P → "Run bridge self-test". All steps pass (D3 now also checks the player comes back in IT).
 - [ ] H2. In a real tracker, remove a player in IT. A message says the player was added back; the player is back in IT straight away, with the webapp's HP and initiative, once.
 - [ ] H3. Remove a monster in IT. It does not come back (it is dead in the webapp, as before).
+- [ ] H4. Click the bridge button to open the connect window with "New tracker" selected. The name field is empty with the date and time in grey, and you can type straight away. Leave it empty: the tracker gets the date and time. Type a name: the tracker gets that name.
 
 ## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
 
