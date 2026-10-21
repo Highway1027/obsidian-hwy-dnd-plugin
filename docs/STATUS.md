@@ -6,8 +6,8 @@ Start here. Current state and open work only. Last update: 21-10-2026.
 
 - **0.5.2** released 21-10-2026 (main `afeb39a`, tag `0.5.2`): adds Ctrl+P → "Run bridge self-test (test campaign)". It passed 19/19 in Tim's desktop vault on "TEST - Arc van Noah" (uses Tim's own "TEST - HP TESTER" for player HP), so the bridge sync of 0.5.0/0.5.1 is checked. No bridge code changes since 0.5.1.
 - **Still by hand** (`docs/TESTING.md`): Obsidian restart, IT's own buttons (New encounter, closing the pane), the DM's PC (IT 13.0.17+, update via BRAT), webapp quick checks.
-- **On `develop`, not released:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens), and after "New encounter" a message with "Create a new webapp tracker for this encounter". Hand test: sitting D.
-- **Next:** sitting D, then release 0.6.0; the DM's PC at the next session; then the sync-reliability work (Inbox).
+- **On `develop`, not released:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens), and after "New encounter" a message with "Create a new webapp tracker for this encounter". Hand test: sitting E.
+- **Next:** sitting E, then release 0.6.0; the DM's PC at the next session; then the sync-reliability work (Inbox).
 
 ## Known issues
 

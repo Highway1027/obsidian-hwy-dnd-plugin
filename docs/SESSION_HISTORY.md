@@ -9,7 +9,7 @@ Short log for troubleshooting. Newest first, 3 to 6 lines per session; details i
 - One-click reconnect (`reconnect.ts`, tested): only to the last tracker, only within 12 h of the last connect, so next week's fight is never merged into last week's tracker. The self-test's test tracker is never remembered.
 - New encounter: the manager calls `onNewEncounter`; main.ts clears the last tracker and shows a sticky notice with "Create a new webapp tracker for this encounter".
 - Tim confirmed the button works in the sidebar.
-- Connect window redesigned: one radio list (new tracker with editable name first, then existing trackers newest first with "updated ... ago" and a "last used" badge), campaign + IT summary on top, button text says what happens, double-click connects. Preselection uses the same 12 h rule as the pane button. Pure helpers in `connectChoices.ts` (tested); tracker names now `Combat DD-MM-YYYY HH:MM`. Rest of sitting D not tested yet.
+- Connect window redesigned: one radio list (new tracker with editable name first, then existing trackers newest first with "updated ... ago" and a "last used" badge), campaign + IT summary on top, button text says what happens, double-click connects. Preselection uses the same 12 h rule as the pane button. Pure helpers in `connectChoices.ts` (tested); tracker names now `Combat DD-MM-YYYY HH:MM`. Rest of sitting E not tested yet.
 
 ## 21-10-2026 - Self-test runs, fixes, release 0.5.2
 
