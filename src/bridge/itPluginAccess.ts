@@ -85,6 +85,11 @@ export class ITPluginAccess {
         return this.getPlugin()?.tracker ?? null;
     }
 
+    /** IT's installed version ("13.0.18"), or null when it can't be read. */
+    getVersion(): string | null {
+        return (this.app as any).plugins?.manifests?.['initiative-tracker']?.version ?? null;
+    }
+
     /** Check if the IT plugin is available and loaded. */
     isAvailable(): boolean {
         return this.getTrackerStore() !== null;

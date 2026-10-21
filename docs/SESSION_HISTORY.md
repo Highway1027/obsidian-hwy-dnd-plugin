@@ -2,7 +2,23 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
-## 07-10-2026 - Bridge 0.5.1 (built, not released)
+## 21-10-2026 - First self-test run: fix test name clash
+
+- Run in Obsidian: 16 passed, C1 + A3 failed, A5 skipped. Cause: the TEST campaign is a copy of Arc van Noah, whose real character is "Ogg of the Cragmaw tribe", the same name the self-test used for its made-up PC. C1 then read the real Ogg's link; on reconnect the made-up Ogg got its full name (clash with "Ogg the Younger") and IT showed the name twice.
+- Fix: made-up PCs are now "Zorvath of the Selftest clan" / "Zorvath the Younger", and C1/D3 find them by webapp combatant id instead of name. Bridge code unchanged.
+- A5 skip (permission-denied on the character doc): webapp rules let only the owner (`uid`) update a character, nothing to do with D&D Beyond. The self-test now picks a campaign character owned by the plugin's account for its PC (A5 runs), and skips A5 with a clear reason otherwise. Tim added "TEST - HP TESTER" to the TEST campaign: 19/19 passed.
+- Second run: 18 passed, A5 skipped. "Selftest Stranger" in IT but not the webapp is step E5 (a player without a campaign character stays Obsidian-only), by design.
+
+## 21-10-2026 - TESTING.md in sittings, bridge self-test (not released)
+
+- `docs/test-plans/` (3 overlapping files) replaced by one `docs/TESTING.md` in sittings, with the "How to write a sitting" rules from the webapp and Loadout Manager.
+- New command "Run bridge self-test (test campaign)" (`src/selftest/`): clears IT, adds test creatures, creates its own tracker, plays the webapp by writing to it like the webapp does and the DM through IT's store, checks 18 steps, writes the note `Bridge self-test.md`. Deletes its tracker when everything passed.
+- Safety: refuses unless the campaign has `isTestCopy: true` and a "TEST - " name (test copies have their own character copies, so A5 may change a test character's HP and puts it back). Asks before clearing IT. Each step waits 3 s first, past the bridge's 2 s echo window.
+- Decided against Playwright-style flows (Obsidian is a desktop app) and a fake IT on the emulator (it wouldn't test the real IT access). Not run in Obsidian yet; 39 unit tests pass, build clean.
+
+## 07/08-10-2026 - Bridge 0.5.1 (released)
+
+- Released 08-10-2026: main `4841d98`, tag `0.5.1`, GitHub release with main.js, manifest.json, styles.css. `package.json` version now matches the manifest (was 0.1.9); release skill updated for that.
 
 - Found: removing a creature in IT did nothing in the webapp (monster stayed alive and was re-added to IT on the next connect). Now removed monsters/allies get `isDead` + `deathRound` (`removal.ts`), also during the echo window; PCs and player summons never die this way; dead monsters are not re-added on connect; reviving one in the webapp adds it back.
 - Fake 1000/999 initiatives replaced: IT gets the real value plus `manualOrder` = webapp position (`ordering.ts`; IT 13.0.17+ sorts initiative, then manualOrder). IT doesn't save manualOrder, so it is reapplied on every webapp change. Old fake values are still ignored.
