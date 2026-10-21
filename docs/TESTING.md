@@ -19,9 +19,17 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 - 21-10-2026: self-test built (on `develop`, not released). It checks old steps A1-A5, B1-B4, C1-C4, D1-D5 and E5 by itself.
 - 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath").
-- 21-10-2026 second run: **18 passed, A5 skipped** (all bridge behaviour of 0.5.0/0.5.1 except player HP). A5 can't run: characters linked to D&D Beyond get HP only from there, the DM can't write it. Player HP is covered by hand in B1.
+- 21-10-2026 second run: **18 passed, A5 skipped** (all bridge behaviour of 0.5.0/0.5.1 except player HP). A5 skipped because only a character's owner may change it, and no character in the TEST campaign is yours. Fixed: the test now uses one of your own characters when the campaign has one (see sitting A).
 
 ---
+
+## Sitting A: Player HP in the self-test (≈ 3 min)
+
+**Before you start:**
+- Copy the new `main.js` from the plugin repo folder (built 21-10-2026) into `.obsidian/plugins/highway-dnd-tools/`, reload Obsidian.
+- Webapp, logged in with the account the plugin uses: make a plain character (no D&D Beyond link), e.g. "Hpcheck Testchar", and add it to "TEST - Arc van Noah".
+
+- [ ] A1. Ctrl+P → **Run bridge self-test (test campaign)** → **Start**. In the note, A5 is ✅ and the rest stays ✅.
 
 ## Sitting B: Restart and IT's own buttons (≈ 5 min)
 

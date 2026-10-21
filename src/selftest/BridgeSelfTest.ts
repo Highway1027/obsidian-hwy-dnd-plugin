@@ -9,7 +9,7 @@ import { ITPluginAccess } from '../bridge/itPluginAccess';
 import type { WebappCombatant } from '../bridge/fieldMapping';
 import { webappOrder, withSortIndex } from '../bridge/ordering';
 import {
-    authenticateWithApiToken, isAuthenticated, getDb,
+    authenticateWithApiToken, isAuthenticated, getCurrentUser, getDb,
     doc, getDoc, updateDoc, deleteDoc, serverTimestamp,
 } from '../firebase';
 import { isTestCampaign, versionAtLeast, orderMismatch, editCombatant, formatReport, type StepResult } from './checks';
@@ -51,6 +51,7 @@ export class BridgeSelfTest {
     private results: StepResult[] = [];
     private campaignName = '';
     private pcMember: { characterId: string; name: string } | null = null;
+    private ownsPc = false;   // the DM's account owns pcMember's character, so A5 may change its HP
     private trackerId: string | null = null;
     private trackerName = '';
     private ids: Record<string, string> = {};   // role → IT id
@@ -86,8 +87,18 @@ export class BridgeSelfTest {
             return 'The self-test campaign must be a webapp test copy (named "TEST - ..."). Make one on the webapp Developer page.';
         }
         this.campaignName = caravan!.name;
-        const members: any[] = caravan!.characterMembers || [];
-        const member = members.find(m => m?.characterId && m?.name);
+        const members: any[] = (caravan!.characterMembers || []).filter((m: any) => m?.characterId && m?.name);
+        // Only the owner may write a character, so prefer one of the DM's own for A5 (HP).
+        const uid = getCurrentUser()?.uid;
+        let member = members[0];
+        for (const m of members) {
+            const charSnap = await getDoc(doc(getDb(), 'characters', m.characterId));
+            if (uid && charSnap.exists() && charSnap.data().uid === uid) {
+                member = m;
+                this.ownsPc = true;
+                break;
+            }
+        }
         this.pcMember = member ? { characterId: member.characterId, name: member.name } : null;
         return null;
     }
@@ -229,6 +240,7 @@ export class BridgeSelfTest {
 
         await this.step('A5', 'A player\'s HP changed in the webapp reaches IT', async () => {
             if (!pc) throw new SkipStep('the test campaign has no player characters');
+            if (!this.ownsPc) throw new SkipStep('no character in the test campaign belongs to your account (only the owner may change HP)');
             const charRef = doc(getDb(), 'characters', pc.characterId);
             const snap = await getDoc(charRef);
             const data: any = snap.exists() ? snap.data() : null;
@@ -239,8 +251,7 @@ export class BridgeSelfTest {
             try {
                 await updateDoc(charRef, { [field]: target });
             } catch (err) {
-                // Expected for characters linked to D&D Beyond: the webapp only takes their HP from there.
-                throw new SkipStep("the webapp does not let the DM change this character's HP (D&D Beyond link?); checked by hand in sitting B1");
+                throw new SkipStep(`could not change the character's HP (${String(err)})`);
             }
             try {
                 await this.waitFor(async () => {
