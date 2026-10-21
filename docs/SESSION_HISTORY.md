@@ -7,6 +7,7 @@ Short log for troubleshooting. Newest first, 3 to 6 lines per session; details i
 - Tim passed sittings B, C and E. Feedback: IT's "New encounter" keeps the players with last fight's initiative.
 - First fix kept the players and cleared their initiative (Tim found it buggy). Tim's call: always remove them, because the webapp adds the adventuring party in one click, and the bridge brings those PCs into IT (first names, linked by id).
 - Now: after the disconnect `itPluginAccess.removePlayers()` empties IT of players. Also on IT's `start-encounter` event. Not hand-tested yet: sitting F.
+- Gotcha: Tim's first test still showed the players because the vault (`D:\Obsidian\highway-vault\.obsidian\plugins\highway-dnd-tools`) still had the 14:43 build. After `npm run build`, copy `main.js`, `manifest.json` and `styles.css` there, then reload the plugin.
 
 ## 21-10-2026 - Review, bridge button in the IT pane
 
