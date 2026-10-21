@@ -304,6 +304,26 @@ export class BridgeSelfTest {
             if (new Set(names).size !== names.length) throw new Error(`IT has a creature twice: ${names.join(', ')}`);
         });
 
+        await this.step('D3.1', 'A campaign character removed in IT comes back with its HP', async () => {
+            if (!pc || !this.ids.pc) throw new SkipStep('the test campaign has no player characters');
+            const snap = await getDoc(doc(getDb(), 'characters', pc.characterId));
+            const data: any = snap.exists() ? snap.data() : null;
+            const sheetHp = data?.activeWildshapeData?.currentHP ?? data?.currentHP ?? data?.hp;
+            if (typeof sheetHp !== 'number') throw new SkipStep('the test character has no HP field');
+            const oldId = this.ids.pc;
+            this.it.removeCreature(oldId);
+            await sleep(SETTLE_MS);
+            await this.waitFor(async () => {
+                const player = (await this.combatants()).find(c => c.pcId === pc.characterId);
+                if (!player?.obsidianId || player.obsidianId === oldId) return `${pc.name} was not added back in IT`;
+                const creature = this.itById(player.obsidianId);
+                if (!creature) return `${pc.name} is linked to a creature that is not in IT`;
+                if (creature.hp !== sheetHp) return `IT shows HP ${creature.hp}, the character sheet has ${sheetHp}`;
+                this.ids.pc = player.obsidianId;
+                return null;
+            });
+        });
+
         await this.step('A3', 'Reconnecting adds nobody twice and keeps removed monsters out', async () => {
             const before = (await this.combatants()).length;
             await this.bridge.disconnect();

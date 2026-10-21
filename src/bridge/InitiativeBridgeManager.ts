@@ -756,6 +756,12 @@ export class InitiativeBridgeManager {
         if (newId && combatant.obsidianId !== newId) {
             this.assignObsidianId(combatant, newId);
         }
+
+        // A player's HP and AC come from the character sheet, sent only on its first load or
+        // a change. A sheet already loaded (a player added back) is sent now.
+        const pcId = combatant.pcId || (combatant as any).ownerId;
+        const sheet = pcId ? this.pcCharacterData.get(pcId) : undefined;
+        if (sheet) this.handleCharacterDataChange(pcId!, sheet, null);
     }
 
     /**

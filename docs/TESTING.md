@@ -24,16 +24,16 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sittings B (restart, IT's own buttons), C (DM's PC) and E (bridge button in the IT pane) passed. Feedback: after New encounter the players stayed in IT. Now removed.
 - 21-10-2026: sitting F passed (New encounter removes the players).
 - 21-10-2026: sitting G passed (New encounter creates a webapp tracker by itself). Feedback: a player removed in IT by accident stays gone from IT. Now added back (sitting H).
+- 21-10-2026: sitting H passed. Feedback: the player added back had no HP in IT. Fixed (sitting I).
 
 ---
 
-## Sitting H: A player removed in IT comes back (≈ 3 min)
+## Sitting I: A player added back keeps their HP (≈ 3 min)
 
-**Before you start:** the build from `develop` is already in the desktop vault (21-10-2026, 15:18); reload the plugin once. IT connected to a tracker with players and monsters.
-- [ ] H1. Ctrl+P → "Run bridge self-test". All steps pass (D3 now also checks the player comes back in IT).
-- [ ] H2. In a real tracker, remove a player in IT. A message says the player was added back; the player is back in IT straight away, with the webapp's HP and initiative, once.
-- [ ] H3. Remove a monster in IT. It does not come back (it is dead in the webapp, as before).
-- [ ] H4. Click the bridge button to open the connect window with "New tracker" selected. The name field is empty with the date and time in grey, and you can type straight away. Leave it empty: the tracker gets the date and time. Type a name: the tracker gets that name.
+**Before you start:** the build from `develop` is already in the desktop vault (21-10-2026); reload the plugin once. IT connected to a tracker with players and monsters.
+- [ ] I1. Ctrl+P → "Run bridge self-test". All steps pass, including the new D3.1 (a campaign character removed in IT comes back with its HP).
+- [ ] I2. In a real tracker, remove a player in IT. They come back with their HP, max HP and AC from the webapp.
+- [ ] I3. Change that player's HP in the webapp. IT follows.
 
 ## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
 

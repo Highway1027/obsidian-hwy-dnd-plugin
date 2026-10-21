@@ -8,6 +8,7 @@ Short log for troubleshooting. Newest first, 3 to 6 lines per session; details i
 - Now: `removal.playersToRestore` finds the webapp PCs of removed IT players (player summons left out: dismissing one is normal); the manager adds them back via `handleNewCombatantFromFirestore` (webapp HP and initiative, first name) with a Notice. Runs in both the normal and the echo-window save path.
 - Gotcha: the removed id is dropped from the IT snapshot at once, so the save-state that follows the re-add does not restore it twice. The re-add runs in a `setTimeout(0)`, outside IT's own event.
 - Self-test D3 now also checks the player is back in IT with a new linked id. Build copied to the vault; sitting H.
+- Tim passed sitting H, but the player added back had no HP in IT. Cause: PC HP/AC come from the character sheet listener, which only pushes on first load or a change. Fix: `handleNewCombatantFromFirestore` sends the cached sheet (`pcCharacterData`) for any creature it adds. New self-test step D3.1 removes the real campaign character and checks its HP comes back.
 - Connect window: Tim found the prefilled date-time name unclear. Now an empty field ("Name (optional)") with the date and time as grey placeholder, focused when New tracker is preselected; empty means the date and time are used.
 
 ## 21-10-2026 - New encounter: players removed, new tracker by itself
