@@ -91,8 +91,6 @@ export class InitiativeBridgeManager {
     // Last known state for diffing
     private lastFirestoreState: any = null;
     private lastITCreatureIds: Set<string> = new Set();
-    // Players whose initiative was cleared for a new encounter: IT shows 0, the webapp gets empty
-    private clearedInitiativeIds: Set<string> = new Set();
     // Map from IT creature.id → last known state
     private lastITCreatureMap: Map<string, { name: string; hp: number; initiative: number; hidden: boolean; active: boolean; player: boolean }> = new Map();
 
@@ -196,13 +194,6 @@ export class InitiativeBridgeManager {
         );
     }
 
-    /** Creature ref for linking; a cleared initiative still at 0 goes to the webapp as empty. */
-    private linkRef(creature: any): ItCreatureRef {
-        const ref = toCreatureRef(creature);
-        if (this.clearedInitiativeIds.has(ref.id) && ref.initiative === 0) ref.initiative = undefined;
-        return ref;
-    }
-
     /**
      * Create a new tracker in Firestore from the current IT encounter.
      * IT players become proper webapp PCs (linked to their caravan character);
@@ -214,7 +205,7 @@ export class InitiativeBridgeManager {
 
         const liveCreatures = this.itAccess.getOrderedCreatures();
         const pcs = await this.loadCaravanPcs(caravanId);
-        const plan = planLinks([], liveCreatures.map(c => this.linkRef(c)), pcs);
+        const plan = planLinks([], liveCreatures.map(toCreatureRef), pcs);
 
         const monsters = liveCreatures
             .filter((c: any) => !c.player)
@@ -266,7 +257,7 @@ export class InitiativeBridgeManager {
         const existingCombatants: WebappCombatant[] = snap.data().combatants || [];
         const liveCreatures = this.itAccess.getOrderedCreatures();
         const pcs = await this.loadCaravanPcs(caravanId);
-        const plan = planLinks(existingCombatants, liveCreatures.map(c => this.linkRef(c)), pcs);
+        const plan = planLinks(existingCombatants, liveCreatures.map(toCreatureRef), pcs);
 
         const combatants = existingCombatants.map(c => ({ ...c }));
         for (const { index, obsidianId } of plan.relinks) {
@@ -855,12 +846,13 @@ export class InitiativeBridgeManager {
     }
 
     /**
-     * Disconnect from the old tracker and clear the players' initiative: IT keeps the
-     * players with last fight's rolls, but everyone rolls again in a new fight.
+     * Disconnect from the old tracker and remove the players IT kept: a new fight starts
+     * empty, and the DM adds the party in the webapp (it then comes to IT through the bridge).
      */
     private async handleNewEncounter(): Promise<void> {
         await this.disconnect();
-        this.clearedInitiativeIds = new Set(this.itAccess.clearPlayerInitiatives());
+        const removed = this.itAccess.removePlayers();
+        if (removed > 0) console.log(`[Bridge] New encounter: removed ${removed} players from IT`);
         this.onNewEncounter?.();
     }
 

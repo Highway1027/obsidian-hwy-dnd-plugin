@@ -288,18 +288,13 @@ export class ITPluginAccess {
         return added.id as string;
     }
 
-    /**
-     * Set every player's initiative to 0 with one save (IT has no empty initiative).
-     * Returns the IT ids that were cleared.
-     */
-    clearPlayerInitiatives(): string[] {
+    /** Remove every player from the encounter. Returns how many were removed. */
+    removePlayers(): number {
         const store = this.getTrackerStore();
-        if (!store?.updateAndSave) return [];
+        if (!store?.remove) return 0;
         const players = this.getOrderedCreatures().filter((c: any) => c.player);
-        if (players.length === 0) return [];
-        for (const p of players) p.initiative = 0;
-        store.updateAndSave();
-        return players.map((p: any) => p.id as string);
+        for (const p of players) store.remove(p);
+        return players.length;
     }
 
     removeCreature(key: string): boolean {

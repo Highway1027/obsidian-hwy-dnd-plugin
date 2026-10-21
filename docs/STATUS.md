@@ -5,8 +5,8 @@ Start here. Current state and open work only. Last update: 21-10-2026.
 ## Now
 
 - **0.5.2** released 21-10-2026 (main `afeb39a`, tag `0.5.2`): adds Ctrl+P → "Run bridge self-test (test campaign)". It passed 19/19 in Tim's desktop vault on "TEST - Arc van Noah" (uses Tim's own "TEST - HP TESTER" for player HP), so the bridge sync of 0.5.0/0.5.1 is checked. No bridge code changes since 0.5.1.
-- **Hand tests passed 21-10-2026:** sittings B (restart, IT's buttons), C (DM's PC) and E (pane button). Still open: sitting F (new encounter clears initiative) and the webapp quick checks (D).
-- **On `develop`, not released:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens), and after "New encounter" a message with "Create a new webapp tracker for this encounter"; the players' initiative is cleared then (0 in IT, empty in the webapp). Hand test: sitting F.
+- **Hand tests passed 21-10-2026:** sittings B (restart, IT's buttons), C (DM's PC) and E (pane button). Still open: sitting F (new encounter removes the players) and the webapp quick checks (D).
+- **On `develop`, not released:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens), and after "New encounter" a message with "Create a new webapp tracker for this encounter"; IT's kept players are removed then (the DM adds the party in the webapp, the bridge brings it to IT). Hand test: sitting F.
 - **Next:** sitting F, then release 0.6.0; then the sync-reliability work (Inbox).
 
 ## Known issues

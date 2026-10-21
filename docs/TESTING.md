@@ -21,16 +21,16 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath").
 - 21-10-2026 second run: **18 passed, A5 skipped** (all bridge behaviour of 0.5.0/0.5.1 except player HP). A5 skipped because only a character's owner may change it, and no character in the TEST campaign is yours. Fixed: the test now uses one of your own characters when the campaign has one.
 - 21-10-2026 third run (with Tim's "TEST - HP TESTER" in the TEST campaign): **19/19 passed**.
-- 21-10-2026: sittings B (restart, IT's own buttons), C (DM's PC) and E (bridge button in the IT pane) passed. Feedback: after New encounter the players kept last fight's initiative (fixed, sitting F).
+- 21-10-2026: sittings B (restart, IT's own buttons), C (DM's PC) and E (bridge button in the IT pane) passed. Feedback: after New encounter the players stayed in IT. Now removed (sitting F).
 
 ---
 
-## Sitting F: New encounter clears the players' initiative (≈ 3 min)
+## Sitting F: New encounter removes the players (≈ 3 min)
 
-**Before you start:** a plugin build from `develop` (copied into the desktop vault, plugin reloaded). IT connected to a tracker, players with initiative rolled.
-- [ ] F1. Click **New encounter** in IT. The players stay in IT, their initiative shows 0.
-- [ ] F2. Click "Create a new webapp tracker for this encounter". In the webapp the players are in the new tracker with an empty initiative field.
-- [ ] F3. Fill in a player's initiative in the webapp. IT shows it within a few seconds.
+**Before you start:** a plugin build from `develop` (copied into the desktop vault, plugin reloaded). IT connected to a tracker with players and monsters.
+- [ ] F1. Click **New encounter** in IT. IT is empty: no monsters, no players.
+- [ ] F2. Add a monster in IT, click "Create a new webapp tracker for this encounter". The new tracker has only that monster.
+- [ ] F3. In the webapp, add the adventuring party to that tracker. The players show up in IT with their first names, within a few seconds. Nobody twice.
 
 ## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
 
