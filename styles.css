@@ -131,10 +131,12 @@
     text-transform: uppercase;
 }
 /* Initiative Bridge button in IT's pane header: green when connected, red when off */
-.view-action.hwy-bridge-on {
+.view-action.hwy-bridge-on,
+.hwy-bridge-pane-button.hwy-bridge-on .clickable-icon {
     color: var(--color-green);
 }
 
-.view-action.hwy-bridge-off {
+.view-action.hwy-bridge-off,
+.hwy-bridge-pane-button.hwy-bridge-off .clickable-icon {
     color: var(--color-red);
 }

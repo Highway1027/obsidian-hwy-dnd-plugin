@@ -5,7 +5,7 @@ Short log for troubleshooting. Newest first, 3 to 6 lines per session; details i
 ## 21-10-2026 - Review, bridge button in the IT pane
 
 - Code review: structure sound; main weak spot is time-based echo suppression (real changes in the 2 s window are lost) plus parallel IT-save writes (drag-and-drop issue). Parked in the Inbox as "sync reliability".
-- New: bridge button in IT's pane header via Obsidian's `view.addAction` (`TrackerPaneButton.ts`), so IT's code and DOM are untouched. IT 13.0.18 puts no header actions of its own.
+- New: bridge button in IT's pane (`TrackerPaneButton.ts`), IT's code untouched. First via `view.addAction`, but a pane in the sidebar has no header (where the DM keeps IT), so it now sits first in IT's own icon row (`.buttons > .clean`, selector in `itPluginAccess.ts`), built with `ExtraButtonComponent` like IT's icons. A MutationObserver puts it back when IT redraws; header only as a fallback after 3 s.
 - One-click reconnect (`reconnect.ts`, tested): only to the last tracker, only within 12 h of the last connect, so next week's fight is never merged into last week's tracker. The self-test's test tracker is never remembered.
 - New encounter: the manager calls `onNewEncounter`; main.ts clears the last tracker and shows a sticky notice with "Create a new webapp tracker for this encounter".
 - Not tested in Obsidian yet (sitting D).
