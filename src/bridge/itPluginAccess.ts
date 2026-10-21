@@ -56,6 +56,14 @@ export interface ITViewState {
 export const IT_TRACKER_VIEW_TYPE = 'initiative-tracker-view';
 
 /**
+ * IT's own icon row at the top of the tracker (log file, player view, menu), right of
+ * the play button. IT 13.0.18: div.buttons > div.state + div.clean. Null when IT changes it.
+ */
+export function findTrackerIconRow(viewContentEl: HTMLElement): HTMLElement | null {
+    return viewContentEl.querySelector<HTMLElement>('.buttons > .clean');
+}
+
+/**
  * Provides access to the IT plugin's internal tracker store and API.
  *
  * Access path:
@@ -278,6 +286,15 @@ export class ITPluginAccess {
         if (!added) return null;
         this.setCreatureInitiative(added.id, initiative);
         return added.id as string;
+    }
+
+    /** Remove every player from the encounter. Returns how many were removed. */
+    removePlayers(): number {
+        const store = this.getTrackerStore();
+        if (!store?.remove) return 0;
+        const players = this.getOrderedCreatures().filter((c: any) => c.player);
+        for (const p of players) store.remove(p);
+        return players.length;
     }
 
     removeCreature(key: string): boolean {

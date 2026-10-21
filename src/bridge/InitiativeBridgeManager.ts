@@ -10,7 +10,8 @@ import {
     type CaravanPc, type ItCreatureRef
 } from './linking';
 import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
-import { markRemovedMonstersDead, type RemovedCreature } from './removal';
+import { markRemovedMonstersDead, playersToRestore, type RemovedCreature } from './removal';
+import type { TrackerSummary } from './connectChoices';
 import {
     doc, getDoc, setDoc, updateDoc, collection,
     onSnapshot, getDocs, serverTimestamp,
@@ -102,7 +103,9 @@ export class InitiativeBridgeManager {
     private warnedUnlinkedPlayers: Set<string> = new Set();
 
     // Status change callback for UI components (status bar, sidebar)
-    public onStatusChange: ((connected: boolean, info?: { trackerName?: string; caravanId?: string }) => void) | null = null;
+    public onStatusChange: ((connected: boolean, info?: { trackerName?: string; caravanId?: string; trackerId?: string }) => void) | null = null;
+    // A new encounter started in IT and the bridge disconnected (main.ts offers a new tracker)
+    public onNewEncounter: (() => void) | null = null;
 
     get isConnected(): boolean {
         return this._isConnected;
@@ -133,7 +136,7 @@ export class InitiativeBridgeManager {
     // CONNECTION LIFECYCLE
     // ==========================================
 
-    async fetchActiveTrackers(caravanId: string): Promise<any[]> {
+    async fetchActiveTrackers(caravanId: string): Promise<TrackerSummary[]> {
         const db = getDb();
         if (!db) throw new Error('Firestore not initialized');
 
@@ -145,7 +148,24 @@ export class InitiativeBridgeManager {
             name: d.data().name || 'Unnamed',
             round: d.data().round || 1,
             combatantCount: (d.data().combatants || []).length,
+            updatedAt: d.data().updatedAt?.toMillis?.() ?? 0,
         }));
+    }
+
+    /** The campaign's name, or null when it can't be read. */
+    async fetchCaravanName(caravanId: string): Promise<string | null> {
+        try {
+            const snap = await getDoc(doc(getDb(), 'caravans', caravanId));
+            return snap.exists() ? (snap.data().name || null) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** What is in IT right now (for the connect window). */
+    getEncounterSummary(): { creatures: number; players: number } {
+        const creatures = this.itAccess.getOrderedCreatures();
+        return { creatures: creatures.length, players: creatures.filter((c: any) => c.player).length };
     }
 
     /** Load the caravan's player characters (name + character id) for linking. */
@@ -276,7 +296,7 @@ export class InitiativeBridgeManager {
             await this.loadCaravanPcs(caravanId);
         }
 
-        this.onStatusChange?.(true, { caravanId });
+        this.onStatusChange?.(true, { caravanId, trackerId });
 
         // Store initial IT creature state
         this.snapshotITState();
@@ -736,6 +756,12 @@ export class InitiativeBridgeManager {
         if (newId && combatant.obsidianId !== newId) {
             this.assignObsidianId(combatant, newId);
         }
+
+        // A player's HP and AC come from the character sheet, sent only on its first load or
+        // a change. A sheet already loaded (a player added back) is sent now.
+        const pcId = combatant.pcId || (combatant as any).ownerId;
+        const sheet = pcId ? this.pcCharacterData.get(pcId) : undefined;
+        if (sheet) this.handleCharacterDataChange(pcId!, sheet, null);
     }
 
     /**
@@ -784,18 +810,14 @@ export class InitiativeBridgeManager {
                 if (!this._isConnected || this.isDisconnecting) return;
 
                 if (this.isNewEncounter(state)) {
-                    new Notice(
-                        'New encounter in Obsidian — bridge disconnected from the old webapp tracker.\n' +
-                        'Connect again to link this encounter; players are linked to their characters automatically.',
-                        10000
-                    );
-                    this.disconnect();
+                    this.handleNewEncounter();
                     return;
                 }
 
                 if (Date.now() < this.suppressITUntil) {
                     // Webapp changes arrive all the time (players' HP), so a DM removal in this
                     // window must not be lost with the echo.
+                    this.restoreRemovedPlayers();
                     this.writeRemovedMonsterDeaths();
                     this.snapshotITState();
                     return;
@@ -823,12 +845,22 @@ export class InitiativeBridgeManager {
             'initiative-tracker:start-encounter',
             () => {
                 if (this._isConnected) {
-                    new Notice('New encounter started — bridge disconnecting');
-                    this.disconnect();
+                    this.handleNewEncounter();
                 }
             }
         );
         this.itEventRefs.push(newEncounterRef);
+    }
+
+    /**
+     * Disconnect from the old tracker and remove the players IT kept: a new fight starts
+     * empty, and the DM adds the party in the webapp (it then comes to IT through the bridge).
+     */
+    private async handleNewEncounter(): Promise<void> {
+        await this.disconnect();
+        const removed = this.itAccess.removePlayers();
+        if (removed > 0) console.log(`[Bridge] New encounter: removed ${removed} players from IT`);
+        this.onNewEncounter?.();
     }
 
     /**
@@ -855,6 +887,33 @@ export class InitiativeBridgeManager {
         return [...this.lastITCreatureMap.entries()]
             .filter(([id]) => !liveIds.has(id))
             .map(([id, s]) => ({ id, name: s.name, player: s.player }));
+    }
+
+    /**
+     * A player character removed in IT is a mistake (PCs belong to the webapp): add it back
+     * from the webapp, with the webapp's HP and initiative (removal.playersToRestore).
+     */
+    private restoreRemovedPlayers(): void {
+        const removed = this.removedSinceSnapshot().filter(r => r.player);
+        if (removed.length === 0 || !this.lastFirestoreState) return;
+        const restore = playersToRestore(this.lastFirestoreState.combatants || [], removed);
+
+        // Forget the removed ids now, so the save-state that follows the re-add (or an
+        // overlapping IT update) does not restore them a second time.
+        for (const r of removed) {
+            this.lastITCreatureIds.delete(r.id);
+            this.lastITCreatureMap.delete(r.id);
+        }
+        if (restore.length === 0) return;
+
+        const names = restore.map(c => c.name).join(', ');
+        console.log(`[Bridge] Player removed in IT, added back: ${names}`);
+        new Notice(`Players belong to the webapp, so ${names} was added back in IT. Remove players in the webapp.`);
+        // Add after IT finished its own update, outside its save-state event.
+        window.setTimeout(() => {
+            if (!this._isConnected) return;
+            for (const c of restore) this.handleNewCombatantFromFirestore(c);
+        }, 0);
     }
 
     /** Monsters the DM removed in IT become dead in the webapp (removal.ts). */
@@ -965,7 +1024,8 @@ export class InitiativeBridgeManager {
 
         // --- Creatures removed in IT ---
         // Never removed from Firestore (a new encounter must not wipe the tracker), but a
-        // removed monster is beaten: it becomes dead in the webapp. PCs stay as they are.
+        // removed monster is beaten: it becomes dead in the webapp. PCs are put back in IT.
+        this.restoreRemovedPlayers();
         const killed = markRemovedMonstersDead(currentFirestoreCombatants, this.removedSinceSnapshot(), this.lastFirestoreState?.round);
         if (killed.length > 0) {
             needsFullCombatantUpdate = true;

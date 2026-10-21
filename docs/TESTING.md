@@ -21,23 +21,19 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath").
 - 21-10-2026 second run: **18 passed, A5 skipped** (all bridge behaviour of 0.5.0/0.5.1 except player HP). A5 skipped because only a character's owner may change it, and no character in the TEST campaign is yours. Fixed: the test now uses one of your own characters when the campaign has one.
 - 21-10-2026 third run (with Tim's "TEST - HP TESTER" in the TEST campaign): **19/19 passed**.
+- 21-10-2026: sittings B (restart, IT's own buttons), C (DM's PC) and E (bridge button in the IT pane) passed. Feedback: after New encounter the players stayed in IT. Now removed.
+- 21-10-2026: sitting F passed (New encounter removes the players).
+- 21-10-2026: sitting G passed (New encounter creates a webapp tracker by itself). Feedback: a player removed in IT by accident stays gone from IT. Now added back (sitting H).
+- 21-10-2026: sitting H passed. Feedback: the player added back had no HP in IT. Fixed (sitting I).
 
 ---
 
-## Sitting B: Restart and IT's own buttons (≈ 5 min)
+## Sitting I: A player added back keeps their HP (≈ 3 min)
 
-**Before you start:** a webapp tracker with players and monsters, connected in Obsidian.
-- [ ] B1. Close Obsidian completely, reopen, connect to the same tracker. Nobody is added twice; player HP and AC came through. Change a player's HP in D&D Beyond: it shows in IT within a few seconds.
-- [ ] B2. Open a monster's statblock in Obsidian and close it. The bridge stays connected.
-- [ ] B3. Click **New encounter** in IT. A message says the bridge disconnected. The old monsters do not die in the webapp.
-- [ ] B4. Add new monsters, connect with **Create new tracker**. Open it in the webapp as DM: DM view, hidden monsters included.
-- [ ] B5. Close the IT pane. The bridge disconnects after about 1.5 seconds.
-
-## Sitting C: The DM's PC (≈ 2 min, at the next session)
-
-**Before you start:** the next plugin release is installed on the DM's PC.
-- [ ] C1. Settings → Community plugins: Initiative Tracker is 13.0.17 or newer.
-- [ ] C2. Connect and play a round. The order and turns match the webapp.
+**Before you start:** the build from `develop` is already in the desktop vault (21-10-2026); reload the plugin once. IT connected to a tracker with players and monsters.
+- [ ] I1. Ctrl+P → "Run bridge self-test". All steps pass, including the new D3.1 (a campaign character removed in IT comes back with its HP).
+- [ ] I2. In a real tracker, remove a player in IT. They come back with their HP, max HP and AC from the webapp.
+- [ ] I3. Change that player's HP in the webapp. IT follows.
 
 ## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
 

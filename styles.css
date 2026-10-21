@@ -130,3 +130,103 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+/* Initiative Bridge button in IT's pane header: green when connected, red when off */
+.view-action.hwy-bridge-on,
+.hwy-bridge-pane-button.hwy-bridge-on .clickable-icon {
+    color: var(--color-green);
+}
+
+.view-action.hwy-bridge-off,
+.hwy-bridge-pane-button.hwy-bridge-off .clickable-icon {
+    color: var(--color-red);
+}
+
+/* Connect window: one list, pick one option */
+.hwy-connect-context {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-top: 0;
+}
+
+.hwy-connect-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.hwy-connect-heading {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin: 10px 0 2px;
+}
+
+.hwy-connect-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.hwy-connect-option:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.hwy-connect-option.is-selected {
+    border-color: var(--interactive-accent);
+    background-color: var(--background-modifier-hover);
+}
+
+.hwy-connect-option input[type="radio"] {
+    margin-top: 3px;
+}
+
+.hwy-connect-option-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.hwy-connect-option-title {
+    font-weight: 600;
+}
+
+.hwy-connect-option-details {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.hwy-connect-badge {
+    margin-left: 8px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: var(--font-ui-smaller);
+    font-weight: normal;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.hwy-connect-name-label {
+    margin-top: 6px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.hwy-connect-name {
+    width: 100%;
+    margin-top: 2px;
+}
+
+.hwy-share-initiative-modal .hwy-button-container {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    justify-content: flex-end;
+}
+
+.hwy-share-initiative-modal .hwy-error {
+    color: var(--text-error);
+}

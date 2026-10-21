@@ -4,10 +4,10 @@ Start here. Current state and open work only. Last update: 21-10-2026.
 
 ## Now
 
-- **Bridge self-test** built 21-10-2026 on `develop` (not released): Ctrl+P → "Run bridge self-test (test campaign)" checks most of 0.5.0/0.5.1 in about a minute, only in a webapp test copy. Second run 21-10-2026: 18 passed, A5 skipped (only a character's owner may write it). The test now uses the DM's own character when the TEST campaign has one. Third run 21-10-2026 with Tim's own "TEST - HP TESTER": **19/19 passed. Next: release 0.5.2.**
-
-- **0.5.1** released on GitHub 08-10-2026 (main `4841d98`, tag `0.5.1`), **not yet tested in Obsidian**: real initiative numbers in IT (real value + `manualOrder` = webapp position, no more 1000/999), monster initiative edits in IT sync to the webapp, first names for player characters in IT, monsters removed in IT become dead in the webapp. 30 unit tests pass. Needs IT 13.0.17+ on the DM's PC (ask him his version). Test steps: `docs/TESTING.md`.
-- **0.5.0** on GitHub (27-09-2026): relink on connect, IT players auto-linked to campaign PCs, creatures addressed by IT id, new-encounter and tracker-close detection. **Not yet tested in Obsidian**: covered by the sittings in `docs/TESTING.md`.
+- **0.5.2** released 21-10-2026 (main `afeb39a`, tag `0.5.2`): adds Ctrl+P → "Run bridge self-test (test campaign)". It passed 19/19 in Tim's desktop vault on "TEST - Arc van Noah" (uses Tim's own "TEST - HP TESTER" for player HP), so the bridge sync of 0.5.0/0.5.1 is checked. No bridge code changes since 0.5.1.
+- **Hand tests passed 21-10-2026:** sittings B (restart, IT's buttons), C (DM's PC) and E (pane button). Sittings F and G (new encounter removes the players, creates a tracker by itself) passed too. Sitting H passed. Still open: sitting I and the webapp quick checks (D).
+- **On `develop`, not released:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens; the new tracker's name is an empty field with the date and time as grey placeholder), and "New encounter" while connected removes IT's kept players and connects straight to a new empty webapp tracker (the DM adds the party in the webapp, the bridge brings it to IT). A player character removed in IT by accident is added back from the webapp, with a message. Hand test: sitting I.
+- **Next:** sitting I, then release 0.6.0; then the sync-reliability work (Inbox).
 
 ## Known issues
 
@@ -20,3 +20,6 @@ Start here. Current state and open work only. Last update: 21-10-2026.
 ## Inbox
 
 Ideas parked during a session, one dated line each.
+
+- 21-10-2026: Sync reliability (needs Tim's OK, changes how the sync works). (1) Replace the 2-second echo windows: after applying webapp values to IT, store them as the IT snapshot, and use Firestore's `hasPendingWrites` for our own writes. Today real changes in that window are lost for good (a DM HP edit just after a webapp turn change; a webapp turn change just after a DM edit). (2) Debounce IT saves (~300 ms) and write one at a time: the cause of the drag-and-drop issue. (3) Write combatants in a Firestore transaction instead of overwriting the whole list from the cache. Add self-test steps for each.
+- 21-10-2026: Small: warn when IT sorts ascending; drop the old version headers in the source files; split `main.ts` (1100+ lines, unrelated features).

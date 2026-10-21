@@ -2,11 +2,38 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
-## 21-10-2026 - First self-test run: fix test name clash
+## 21-10-2026 - A player removed in IT comes back
+
+- Tim passed sitting G. Feedback: the DM can remove a PC in IT by accident; the webapp keeps it (correct), but IT loses it.
+- Now: `removal.playersToRestore` finds the webapp PCs of removed IT players (player summons left out: dismissing one is normal); the manager adds them back via `handleNewCombatantFromFirestore` (webapp HP and initiative, first name) with a Notice. Runs in both the normal and the echo-window save path.
+- Gotcha: the removed id is dropped from the IT snapshot at once, so the save-state that follows the re-add does not restore it twice. The re-add runs in a `setTimeout(0)`, outside IT's own event.
+- Self-test D3 now also checks the player is back in IT with a new linked id. Build copied to the vault; sitting H.
+- Tim passed sitting H, but the player added back had no HP in IT. Cause: PC HP/AC come from the character sheet listener, which only pushes on first load or a change. Fix: `handleNewCombatantFromFirestore` sends the cached sheet (`pcCharacterData`) for any creature it adds. New self-test step D3.1 removes the real campaign character and checks its HP comes back.
+- Connect window: Tim found the prefilled date-time name unclear. Now an empty field ("Name (optional)") with the date and time as grey placeholder, focused when New tracker is preselected; empty means the date and time are used.
+
+## 21-10-2026 - New encounter: players removed, new tracker by itself
+
+- Tim passed sittings B, C and E. Feedback: IT's "New encounter" keeps the players with last fight's initiative.
+- First fix kept the players and cleared their initiative (it looked buggy, but the vault still ran the old build). Tim's call: always remove them, because the webapp adds the adventuring party in one click, and the bridge brings those PCs into IT (first names, linked by id).
+- Now: after the disconnect `itPluginAccess.removePlayers()` empties IT of players. Also on IT's `start-encounter` event. Tim passed it (sitting F).
+- Gotcha: Tim's first test still showed the players because the vault (`D:\Obsidian\highway-vault\.obsidian\plugins\highway-dnd-tools`) still had the 14:43 build. After `npm run build`, copy `main.js`, `manifest.json` and `styles.css` there, then reload the plugin.
+- Then: New encounter while connected no longer shows a button; main.ts `startTrackerForNewEncounter` creates and connects a new tracker right away (forgets the old one for the pane button). New build copied to the vault; sitting G.
+
+## 21-10-2026 - Review, bridge button in the IT pane
+
+- Code review: structure sound; main weak spot is time-based echo suppression (real changes in the 2 s window are lost) plus parallel IT-save writes (drag-and-drop issue). Parked in the Inbox as "sync reliability".
+- New: bridge button in IT's pane (`TrackerPaneButton.ts`), IT's code untouched. First via `view.addAction`, but a pane in the sidebar has no header (where the DM keeps IT), so it now sits first in IT's own icon row (`.buttons > .clean`, selector in `itPluginAccess.ts`), built with `ExtraButtonComponent` like IT's icons. A MutationObserver puts it back when IT redraws; header only as a fallback after 3 s.
+- One-click reconnect (`reconnect.ts`, tested): only to the last tracker, only within 12 h of the last connect, so next week's fight is never merged into last week's tracker. The self-test's test tracker is never remembered.
+- New encounter: the manager calls `onNewEncounter`; main.ts clears the last tracker and shows a sticky notice with "Create a new webapp tracker for this encounter".
+- Tim confirmed the button works in the sidebar.
+- Connect window redesigned: one radio list (new tracker with editable name first, then existing trackers newest first with "updated ... ago" and a "last used" badge), campaign + IT summary on top, button text says what happens, double-click connects. Preselection uses the same 12 h rule as the pane button. Pure helpers in `connectChoices.ts` (tested); tracker names now `Combat DD-MM-YYYY HH:MM`. Rest of sitting E not tested yet.
+
+## 21-10-2026 - Self-test runs, fixes, release 0.5.2
 
 - Run in Obsidian: 16 passed, C1 + A3 failed, A5 skipped. Cause: the TEST campaign is a copy of Arc van Noah, whose real character is "Ogg of the Cragmaw tribe", the same name the self-test used for its made-up PC. C1 then read the real Ogg's link; on reconnect the made-up Ogg got its full name (clash with "Ogg the Younger") and IT showed the name twice.
 - Fix: made-up PCs are now "Zorvath of the Selftest clan" / "Zorvath the Younger", and C1/D3 find them by webapp combatant id instead of name. Bridge code unchanged.
 - A5 skip (permission-denied on the character doc): webapp rules let only the owner (`uid`) update a character, nothing to do with D&D Beyond. The self-test now picks a campaign character owned by the plugin's account for its PC (A5 runs), and skips A5 with a clear reason otherwise. Tim added "TEST - HP TESTER" to the TEST campaign: 19/19 passed.
+- Released 0.5.2 (main `afeb39a`, tag `0.5.2`).
 - Second run: 18 passed, A5 skipped. "Selftest Stranger" in IT but not the webapp is step E5 (a player without a campaign character stays Obsidian-only), by design.
 
 ## 21-10-2026 - TESTING.md in sittings, bridge self-test (not released)

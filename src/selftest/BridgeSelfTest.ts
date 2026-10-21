@@ -286,13 +286,42 @@ export class BridgeSelfTest {
             });
         });
 
-        await this.step('D3', 'A player removed in IT stays alive in the webapp', async () => {
+        await this.step('D3', 'A player removed in IT stays alive in the webapp and comes back in IT', async () => {
             if (!this.ids.long) throw new SkipStep(`C1 did not add ${SHORT_PC}`);
-            this.it.removeCreature(this.ids.long);
+            const oldId = this.ids.long;
+            this.it.removeCreature(oldId);
             await sleep(SETTLE_MS);
-            const player = (await this.combatants()).find(c => c.id === this.webappIds.long);
-            if (!player) throw new Error(`${SHORT_PC} is gone from the webapp`);
-            if (player.isDead) throw new Error(`${SHORT_PC} was marked dead`);
+            await this.waitFor(async () => {
+                const player = (await this.combatants()).find(c => c.id === this.webappIds.long);
+                if (!player) return `${SHORT_PC} is gone from the webapp`;
+                if (player.isDead) return `${SHORT_PC} was marked dead`;
+                if (!player.obsidianId || player.obsidianId === oldId) return `${SHORT_PC} was not added back in IT`;
+                if (!this.itById(player.obsidianId)) return `${SHORT_PC} is linked to a creature that is not in IT`;
+                this.ids.long = player.obsidianId;
+                return null;
+            });
+            const names = this.it.getOrderedCreatures().map(itName);
+            if (new Set(names).size !== names.length) throw new Error(`IT has a creature twice: ${names.join(', ')}`);
+        });
+
+        await this.step('D3.1', 'A campaign character removed in IT comes back with its HP', async () => {
+            if (!pc || !this.ids.pc) throw new SkipStep('the test campaign has no player characters');
+            const snap = await getDoc(doc(getDb(), 'characters', pc.characterId));
+            const data: any = snap.exists() ? snap.data() : null;
+            const sheetHp = data?.activeWildshapeData?.currentHP ?? data?.currentHP ?? data?.hp;
+            if (typeof sheetHp !== 'number') throw new SkipStep('the test character has no HP field');
+            const oldId = this.ids.pc;
+            this.it.removeCreature(oldId);
+            await sleep(SETTLE_MS);
+            await this.waitFor(async () => {
+                const player = (await this.combatants()).find(c => c.pcId === pc.characterId);
+                if (!player?.obsidianId || player.obsidianId === oldId) return `${pc.name} was not added back in IT`;
+                const creature = this.itById(player.obsidianId);
+                if (!creature) return `${pc.name} is linked to a creature that is not in IT`;
+                if (creature.hp !== sheetHp) return `IT shows HP ${creature.hp}, the character sheet has ${sheetHp}`;
+                this.ids.pc = player.obsidianId;
+                return null;
+            });
         });
 
         await this.step('A3', 'Reconnecting adds nobody twice and keeps removed monsters out', async () => {

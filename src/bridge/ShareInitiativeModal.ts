@@ -1,32 +1,34 @@
 // src/bridge/ShareInitiativeModal.ts
-// v1 - 25-02-2026 - DM popup for sharing initiative between Obsidian and webapp
+// DM window for connecting the Obsidian Initiative Tracker to a webapp tracker:
+// one list, pick exactly one option (a new tracker, or an existing one).
 
-import { App, Modal, Notice, Setting } from 'obsidian';
+import { App, Modal, Notice } from 'obsidian';
 import { authenticateWithApiToken, isAuthenticated } from '../firebase';
 import { InitiativeBridgeManager } from './InitiativeBridgeManager';
+import {
+    NEW_TRACKER, sortTrackers, defaultChoice, defaultTrackerName, trackerDetails, type TrackerSummary
+} from './connectChoices';
 
 interface PluginSettings {
     apiToken: string;
     caravanId: string;
     lastUsedCaravanId: string;
+    lastTrackerId: string;
+    lastTrackerConnectedAt: number;
     enableInitiativeBridge: boolean;
 }
 
-/**
- * Modal for the DM to share their Obsidian Initiative Tracker
- * with the webapp. Handles caravan selection, tracker selection,
- * and initiating the bridge connection.
- */
 export class ShareInitiativeModal extends Modal {
     private settings: PluginSettings;
     private bridgeManager: InitiativeBridgeManager;
     private saveSettings: () => Promise<void>;
 
     // State
-    private activeTrackers: any[] = [];
-    private isLoading: boolean = true;
-    private selectedTrackerId: string | null = null;
-    private newTrackerName: string = '';
+    private trackers: TrackerSummary[] = [];
+    private choice: string = NEW_TRACKER;   // NEW_TRACKER or a tracker id
+    private newTrackerName: string = '';     // typed by the DM; empty = defaultName
+    private defaultName: string = '';
+    private connectBtn: HTMLButtonElement | null = null;
 
     constructor(
         app: App,
@@ -44,152 +46,155 @@ export class ShareInitiativeModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass('hwy-share-initiative-modal');
+        this.titleEl.setText('Connect to the webapp');
 
-        contentEl.createEl('h2', { text: '🎲 Share Initiative to Webapp' });
-
-        // Show loading state
-        const loadingEl = contentEl.createDiv({ cls: 'hwy-loading' });
-        loadingEl.createEl('p', { text: 'Connecting to webapp...' });
+        const loadingEl = contentEl.createEl('p', { text: 'Connecting to the webapp...' });
 
         try {
-            // 1. Authenticate with Firebase SDK if needed
             if (!isAuthenticated()) {
-                loadingEl.setText('Authenticating...');
+                loadingEl.setText('Signing in...');
                 await authenticateWithApiToken(this.settings.apiToken);
             }
 
-            // 2. Get the caravan ID
             const caravanId = this.settings.lastUsedCaravanId || this.settings.caravanId;
             if (!caravanId) {
-                loadingEl.remove();
-                contentEl.createEl('p', {
-                    text: '⚠️ No caravan ID configured. Please set your Caravan ID in plugin settings.',
-                    cls: 'hwy-error'
-                });
+                loadingEl.setText('⚠️ No campaign set. Add your Caravan ID in the plugin settings.');
+                loadingEl.addClass('hwy-error');
                 return;
             }
 
-            // 3. Fetch active trackers
-            loadingEl.setText('Fetching active trackers...');
-            this.activeTrackers = await this.bridgeManager.fetchActiveTrackers(caravanId);
+            loadingEl.setText('Loading trackers...');
+            const [trackers, caravanName] = await Promise.all([
+                this.bridgeManager.fetchActiveTrackers(caravanId),
+                this.bridgeManager.fetchCaravanName(caravanId),
+            ]);
+            this.trackers = sortTrackers(trackers);
 
             // Remember the caravan for next time
             this.settings.lastUsedCaravanId = caravanId;
             await this.saveSettings();
 
-            // 4. Render the UI
             loadingEl.remove();
-            this.renderTrackerSelection(contentEl, caravanId);
-
+            this.render(contentEl, caravanId, caravanName);
         } catch (error: any) {
-            loadingEl.remove();
             console.error('[ShareInitiativeModal] Error:', error);
-            contentEl.createEl('p', {
-                text: `❌ Error: ${error.message}`,
-                cls: 'hwy-error'
-            });
+            loadingEl.setText(`❌ Error: ${error.message}`);
+            loadingEl.addClass('hwy-error');
         }
     }
 
-    private renderTrackerSelection(container: HTMLElement, caravanId: string): void {
-        // If there are existing trackers, show them
-        if (this.activeTrackers.length > 0) {
-            container.createEl('h3', { text: 'Existing Trackers' });
-            container.createEl('p', {
-                text: 'Select a tracker to merge your initiative, or create a new one.',
-                cls: 'hwy-subtitle'
-            });
+    private render(container: HTMLElement, caravanId: string, caravanName: string | null): void {
+        const now = Date.now();
+        this.newTrackerName = '';
+        this.defaultName = defaultTrackerName(new Date(now));
+        this.choice = defaultChoice(
+            this.trackers,
+            { trackerId: this.settings.lastTrackerId, connectedAt: this.settings.lastTrackerConnectedAt },
+            now
+        );
 
-            const trackerList = container.createDiv({ cls: 'hwy-tracker-list' });
+        // Context: which campaign, what is in IT now.
+        const { creatures, players } = this.bridgeManager.getEncounterSummary();
+        container.createEl('p', {
+            cls: 'hwy-connect-context',
+            text: `Campaign: ${caravanName ?? caravanId} · In Obsidian: ${creatures} ` +
+                `${creatures === 1 ? 'creature' : 'creatures'} (${players} ${players === 1 ? 'player' : 'players'})`,
+        });
 
-            for (const tracker of this.activeTrackers) {
-                const trackerEl = trackerList.createDiv({ cls: 'hwy-tracker-item' });
-                trackerEl.style.padding = '8px 12px';
-                trackerEl.style.margin = '4px 0';
-                trackerEl.style.borderRadius = '6px';
-                trackerEl.style.cursor = 'pointer';
-                trackerEl.style.border = '1px solid var(--background-modifier-border)';
+        const list = container.createDiv({ cls: 'hwy-connect-list' });
+        const options: { id: string; el: HTMLElement; radio: HTMLInputElement }[] = [];
 
-                const nameEl = trackerEl.createSpan({ text: tracker.name, cls: 'hwy-tracker-name' });
-                nameEl.style.fontWeight = 'bold';
-
-                const infoEl = trackerEl.createSpan({
-                    text: ` — Round ${tracker.round}, ${tracker.combatantCount} combatants`,
-                    cls: 'hwy-tracker-info'
-                });
-                infoEl.style.opacity = '0.7';
-                infoEl.style.fontSize = '0.9em';
-
-                trackerEl.addEventListener('click', () => {
-                    // Deselect all
-                    trackerList.querySelectorAll('.hwy-tracker-item').forEach(el => {
-                        (el as HTMLElement).style.backgroundColor = '';
-                    });
-                    // Select this one
-                    trackerEl.style.backgroundColor = 'var(--interactive-accent)';
-                    trackerEl.style.color = 'var(--text-on-accent)';
-                    this.selectedTrackerId = tracker.id;
-                });
+        const select = (id: string) => {
+            this.choice = id;
+            for (const o of options) {
+                o.el.toggleClass('is-selected', o.id === id);
+                o.radio.checked = o.id === id;
             }
+            this.updateConnectButton();
+        };
 
-            // Separator
-            container.createEl('hr');
+        const addOption = (id: string): HTMLElement => {
+            const el = list.createEl('label', { cls: 'hwy-connect-option' });
+            const radio = el.createEl('input', { type: 'radio', attr: { name: 'hwy-connect-choice' } });
+            const body = el.createDiv({ cls: 'hwy-connect-option-body' });
+            radio.addEventListener('change', () => select(id));
+            options.push({ id, el, radio });
+            return body;
+        };
+
+        // 1. A new tracker. The name field starts empty with the date and time greyed out
+        //    behind it, so the DM can type a name straight away or leave it as is.
+        const newBody = addOption(NEW_TRACKER);
+        newBody.createDiv({ cls: 'hwy-connect-option-title', text: 'New tracker for this encounter' });
+        newBody.createDiv({ cls: 'hwy-connect-name-label', text: 'Name (optional)' });
+        const nameInput = newBody.createEl('input', {
+            type: 'text', cls: 'hwy-connect-name', attr: { placeholder: this.defaultName },
+        });
+        nameInput.addEventListener('focus', () => select(NEW_TRACKER));
+        nameInput.addEventListener('input', () => {
+            this.newTrackerName = nameInput.value;
+            this.updateConnectButton();
+        });
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.handleConnect(caravanId);
+        });
+
+        // 2. Existing trackers, newest first.
+        if (this.trackers.length > 0) {
+            list.createDiv({ cls: 'hwy-connect-heading', text: 'Or join an existing webapp tracker' });
+        }
+        for (const tracker of this.trackers) {
+            const body = addOption(tracker.id);
+            const title = body.createDiv({ cls: 'hwy-connect-option-title', text: tracker.name });
+            if (tracker.id === this.settings.lastTrackerId) {
+                title.createSpan({ cls: 'hwy-connect-badge', text: 'last used' });
+            }
+            body.createDiv({ cls: 'hwy-connect-option-details', text: trackerDetails(tracker, now) });
+            body.parentElement!.addEventListener('dblclick', () => {
+                select(tracker.id);
+                this.handleConnect(caravanId);
+            });
         }
 
-        // "Create New" section
-        container.createEl('h3', { text: 'Create New Tracker' });
+        // Buttons
+        const buttons = container.createDiv({ cls: 'hwy-button-container' });
+        buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+        this.connectBtn = buttons.createEl('button', { cls: 'mod-cta' });
+        this.connectBtn.addEventListener('click', () => this.handleConnect(caravanId));
 
-        const nameContainer = container.createDiv();
-        const now = new Date();
-        const defaultName = `Combat - ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-
-        new Setting(nameContainer)
-            .setName('Tracker Name')
-            .setDesc('Leave empty for default name')
-            .addText(text => {
-                text.setPlaceholder(defaultName);
-                text.onChange(value => {
-                    this.newTrackerName = value.trim();
-                });
-            });
-
-        // Action buttons
-        const buttonContainer = container.createDiv({ cls: 'hwy-button-container' });
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.gap = '8px';
-        buttonContainer.style.marginTop = '16px';
-        buttonContainer.style.justifyContent = 'flex-end';
-
-        // Cancel button
-        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
-        cancelBtn.addEventListener('click', () => this.close());
-
-        // Connect button
-        const connectBtn = buttonContainer.createEl('button', {
-            text: this.activeTrackers.length > 0 ? 'Connect' : 'Create & Connect',
-            cls: 'mod-cta'
-        });
-        connectBtn.addEventListener('click', async () => {
-            await this.handleConnect(caravanId, defaultName);
-        });
+        select(this.choice);
+        // Preselected new tracker: the cursor waits in the name field.
+        if (this.choice === NEW_TRACKER) window.setTimeout(() => nameInput.focus(), 0);
     }
 
-    private async handleConnect(caravanId: string, defaultName: string): Promise<void> {
+    /** The button says what will happen. */
+    private updateConnectButton(): void {
+        if (!this.connectBtn) return;
+        if (this.choice === NEW_TRACKER) {
+            this.connectBtn.setText('Create & connect');
+            this.connectBtn.disabled = false;
+        } else {
+            const tracker = this.trackers.find(t => t.id === this.choice);
+            this.connectBtn.setText(`Connect to "${tracker?.name ?? 'tracker'}"`);
+            this.connectBtn.disabled = false;
+        }
+    }
+
+    private async handleConnect(caravanId: string): Promise<void> {
         const { contentEl } = this;
+        const choice = this.choice;
+        const name = this.newTrackerName.trim() || this.defaultName;
+
         contentEl.empty();
-        contentEl.createEl('p', { text: '⏳ Setting up bridge...' });
+        contentEl.createEl('p', { text: '⏳ Setting up the bridge...' });
 
         try {
             let trackerId: string;
-
-            if (this.selectedTrackerId) {
-                // Merge with existing tracker
-                trackerId = this.selectedTrackerId;
-                await this.bridgeManager.mergeWithExistingTracker(caravanId, trackerId);
-            } else {
-                // Create new tracker
-                const name = this.newTrackerName || defaultName;
+            if (choice === NEW_TRACKER) {
                 trackerId = await this.bridgeManager.createNewTracker(caravanId, name);
+            } else {
+                trackerId = choice;
+                await this.bridgeManager.mergeWithExistingTracker(caravanId, trackerId);
             }
 
             // Start the bidirectional sync
@@ -197,15 +202,10 @@ export class ShareInitiativeModal extends Modal {
 
             new Notice('🟢 Initiative Bridge connected!');
             this.close();
-
         } catch (error: any) {
             console.error('[ShareInitiativeModal] Connect error:', error);
             contentEl.empty();
-            contentEl.createEl('p', {
-                text: `❌ Failed to connect: ${error.message}`,
-                cls: 'hwy-error'
-            });
-
+            contentEl.createEl('p', { text: `❌ Failed to connect: ${error.message}`, cls: 'hwy-error' });
             const retryBtn = contentEl.createEl('button', { text: 'Retry', cls: 'mod-cta' });
             retryBtn.addEventListener('click', () => this.onOpen());
         }
