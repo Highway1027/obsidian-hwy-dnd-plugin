@@ -26,20 +26,9 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sitting F passed (New encounter removes the players).
 - 21-10-2026: sitting G passed (New encounter creates a webapp tracker by itself). Feedback: a player removed in IT by accident stays gone from IT. Now added back (sitting H).
 - 21-10-2026: sitting H passed. Feedback: the player added back had no HP in IT. Fixed (sitting I).
+- 21-10-2026: sitting I passed (0.6.0: a player added back keeps HP, max HP and AC).
+- 21-10-2026: sitting D (webapp crash checks from 27-09-2026) dropped: no such crashes seen since.
 
 ---
 
-## Sitting I: A player added back keeps their HP (≈ 3 min)
-
-**Before you start:** update to 0.6.0 via BRAT (or copy the release files) and reload Obsidian. IT connected to a tracker with players and monsters.
-- [ ] I1. Ctrl+P → "Run bridge self-test". All steps pass, including the new D3.1 (a campaign character removed in IT comes back with its HP).
-- [ ] I2. In a real tracker, remove a player in IT. They come back with their HP, max HP and AC from the webapp.
-- [ ] I3. Change that player's HP in the webapp. IT follows.
-
-## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
-
-Webapp fixes released with 0.5.0. They belong to the webapp, but were only listed here.
-- [ ] D1. Developer → Tech Tree → **Clear**. No crash.
-- [ ] D2. Profile → open a saved entry. No crash, and the translate button works.
-- [ ] D3. Open a campaign and switch caravans quickly. Daily orders don't crash while loading.
-- [ ] D4. Rename a caravan to a name under 3 characters. You get a clear message, not a generic error.
+No open sittings.
