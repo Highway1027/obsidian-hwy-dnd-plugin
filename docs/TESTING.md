@@ -21,36 +21,16 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath").
 - 21-10-2026 second run: **18 passed, A5 skipped** (all bridge behaviour of 0.5.0/0.5.1 except player HP). A5 skipped because only a character's owner may change it, and no character in the TEST campaign is yours. Fixed: the test now uses one of your own characters when the campaign has one.
 - 21-10-2026 third run (with Tim's "TEST - HP TESTER" in the TEST campaign): **19/19 passed**.
+- 21-10-2026: sittings B (restart, IT's own buttons), C (DM's PC) and E (bridge button in the IT pane) passed. Feedback: after New encounter the players kept last fight's initiative (fixed, sitting F).
 
 ---
 
-## Sitting B: Restart and IT's own buttons (≈ 5 min)
+## Sitting F: New encounter clears the players' initiative (≈ 3 min)
 
-**Before you start:** a webapp tracker with players and monsters, connected in Obsidian.
-- [ ] B1. Close Obsidian completely, reopen, connect to the same tracker. Nobody is added twice; player HP and AC came through. Change a player's HP in D&D Beyond: it shows in IT within a few seconds.
-- [ ] B2. Open a monster's statblock in Obsidian and close it. The bridge stays connected.
-- [ ] B3. Click **New encounter** in IT. A message says the bridge disconnected. The old monsters do not die in the webapp.
-- [ ] B4. Add new monsters, connect with **Create new tracker**. Open it in the webapp as DM: DM view, hidden monsters included.
-- [ ] B5. Close the IT pane. The bridge disconnects after about 1.5 seconds.
-
-## Sitting E: Bridge button in the IT pane (≈ 5 min)
-
-**Before you start:** a plugin build from `develop` with the IT pane button (not released yet; copied into the desktop vault). Reload the plugin. The IT pane open in the sidebar, with players and a monster.
-- [ ] E1. Click it (first time today). The connect window opens. Connect to a tracker. The icon turns green.
-- [ ] E2. Click the green icon. The Bridge Status panel opens on the right.
-- [ ] E3. Disconnect, then click the red icon again. It reconnects straight away to the same tracker, with no window ("Bridge reconnected to ...").
-- [ ] E4. Disconnect, Ctrl+P → "Share Initiative to Webapp". On top: the campaign name and what is in Obsidian. The last tracker is selected and marked "last used"; trackers are newest first with "updated ... ago". The button says `Connect to "<name>"`.
-- [ ] E4.1. Click "New tracker for this encounter". The name is filled in (`Combat DD-MM-YYYY HH:MM`), the button says "Create & connect". Empty the name: the button greys out.
-- [ ] E4.2. Double-click an existing tracker. It connects straight away.
-- [ ] E5. While connected, click **New encounter** in IT. A message stays with the button "Create a new webapp tracker for this encounter". Click it: a new tracker "Combat DD-MM-YYYY HH:MM" appears in the webapp, the icon is green.
-- [ ] E6. Close the IT pane and open it again. The icon is still there (one, not two).
-- [ ] E7. Press play in IT, then stop. The icon stays (IT redraws that row).
-
-## Sitting C: The DM's PC (≈ 2 min, at the next session)
-
-**Before you start:** the next plugin release is installed on the DM's PC.
-- [ ] C1. Settings → Community plugins: Initiative Tracker is 13.0.17 or newer.
-- [ ] C2. Connect and play a round. The order and turns match the webapp.
+**Before you start:** a plugin build from `develop` (copied into the desktop vault, plugin reloaded). IT connected to a tracker, players with initiative rolled.
+- [ ] F1. Click **New encounter** in IT. The players stay in IT, their initiative shows 0.
+- [ ] F2. Click "Create a new webapp tracker for this encounter". In the webapp the players are in the new tracker with an empty initiative field.
+- [ ] F3. Fill in a player's initiative in the webapp. IT shows it within a few seconds.
 
 ## Sitting D: Webapp quick checks from 27-09-2026 (≈ 3 min)
 

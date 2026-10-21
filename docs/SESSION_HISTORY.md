@@ -2,6 +2,12 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - New encounter clears the players' initiative
+
+- Tim passed sittings B, C and E. Feedback: IT's "New encounter" keeps the players with last fight's initiative.
+- Decision: keep the players in IT (the new webapp tracker takes its PCs from IT; removing them means adding every PC by hand), but clear their initiative. `itPluginAccess.clearPlayerInitiatives()` sets 0 (IT has no empty value); the manager remembers those ids and sends them to the webapp as empty (`linkRef`), so the webapp's "missing initiative" warning shows.
+- Players' initiative is webapp-owned, so IT's 0 is never written back. Not hand-tested yet: sitting F.
+
 ## 21-10-2026 - Review, bridge button in the IT pane
 
 - Code review: structure sound; main weak spot is time-based echo suppression (real changes in the 2 s window are lost) plus parallel IT-save writes (drag-and-drop issue). Parked in the Inbox as "sync reliability".
