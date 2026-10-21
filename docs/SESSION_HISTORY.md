@@ -2,6 +2,12 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - First self-test run: fix test name clash
+
+- Run in Obsidian: 16 passed, C1 + A3 failed, A5 skipped. Cause: the TEST campaign is a copy of Arc van Noah, whose real character is "Ogg of the Cragmaw tribe", the same name the self-test used for its made-up PC. C1 then read the real Ogg's link; on reconnect the made-up Ogg got its full name (clash with "Ogg the Younger") and IT showed the name twice.
+- Fix: made-up PCs are now "Zorvath of the Selftest clan" / "Zorvath the Younger", and C1/D3 find them by webapp combatant id instead of name. Bridge code unchanged.
+- A5 skip (permission-denied on the character doc) is the webapp rules, as expected.
+
 ## 21-10-2026 - TESTING.md in sittings, bridge self-test (not released)
 
 - `docs/test-plans/` (3 overlapping files) replaced by one `docs/TESTING.md` in sittings, with the "How to write a sitting" rules from the webapp and Loadout Manager.

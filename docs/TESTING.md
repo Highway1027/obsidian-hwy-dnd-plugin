@@ -19,6 +19,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 - Nothing tested yet. 0.5.0 (27-09-2026) and 0.5.1 (08-10-2026) are covered by the sittings below.
 - 21-10-2026: self-test built (on `develop`, not released). It checks old steps A1-A5, B1-B4, C1-C4, D1-D5 and E5 by itself.
+- 21-10-2026 first run: 16 passed. C1 and A3 failed because the test's made-up "Ogg of the Cragmaw tribe" had the same name as the real character in the TEST campaign (a test bug, now renamed "Zorvath"). A5 skipped: the webapp rules don't let the DM write a character's HP (expected).
 
 ---
 

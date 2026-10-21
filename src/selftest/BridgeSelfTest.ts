@@ -20,8 +20,10 @@ const SETTLE_MS = 3000;
 const WAIT_MS = 10000;
 const REPORT_PATH = 'Bridge self-test.md';
 
-const LONG_PC = 'Ogg of the Cragmaw tribe';
-const SECOND_OGG = 'Ogg the Younger';
+// Made-up names: they must not match a real character in the test campaign (a copy of a real one).
+const LONG_PC = 'Zorvath of the Selftest clan';
+const SHORT_PC = 'Zorvath';
+const SECOND_PC = 'Zorvath the Younger';
 const STRANGER = 'Selftest Stranger';
 
 class SkipStep extends Error {}
@@ -52,6 +54,7 @@ export class BridgeSelfTest {
     private trackerId: string | null = null;
     private trackerName = '';
     private ids: Record<string, string> = {};   // role → IT id
+    private webappIds: Record<string, string> = {};   // role → webapp combatant id
 
     constructor(private app: App, private bridge: InitiativeBridgeManager, private opts: SelfTestOptions) {
         this.it = new ITPluginAccess(app);
@@ -205,21 +208,23 @@ export class BridgeSelfTest {
 
         await this.step('C1', 'A player character added in the webapp shows with its first name in IT', async () => {
             const list = await this.combatants();
-            await this.webappWrite(withSortIndex([...list, this.webappPc('ogg', LONG_PC, 8)]));
+            const added = this.webappPc('long', LONG_PC, 8);
+            this.webappIds.long = added.id!;
+            await this.webappWrite(withSortIndex([...list, added]));
             await this.waitFor(async () => {
-                const ogg = this.it.getOrderedCreatures().find((c: any) => itName(c) === 'Ogg');
-                if (!ogg) return 'no "Ogg" in IT';
-                this.ids.ogg = ogg.id;
-                const linked = (await this.combatants()).find(c => c.name === LONG_PC);
-                return linked?.obsidianId === ogg.id ? null : 'webapp Ogg is not linked to the IT creature';
+                const creature = this.it.getOrderedCreatures().find((c: any) => itName(c) === SHORT_PC);
+                if (!creature) return `no "${SHORT_PC}" in IT`;
+                this.ids.long = creature.id;
+                const linked = (await this.combatants()).find(c => c.id === added.id);
+                return linked?.obsidianId === creature.id ? null : `webapp ${SHORT_PC} is not linked to the IT creature`;
             });
         });
 
         await this.step('C3', 'A second character with the same first name keeps the full name', async () => {
             const list = await this.combatants();
-            await this.webappWrite(withSortIndex([...list, this.webappPc('ogg2', SECOND_OGG, 7)]));
+            await this.webappWrite(withSortIndex([...list, this.webappPc('second', SECOND_PC, 7)]));
             await this.waitFor(async () =>
-                this.it.getOrderedCreatures().some((c: any) => itName(c) === SECOND_OGG) ? null : `no "${SECOND_OGG}" in IT`);
+                this.it.getOrderedCreatures().some((c: any) => itName(c) === SECOND_PC) ? null : `no "${SECOND_PC}" in IT`);
         });
 
         await this.step('A5', 'A player\'s HP changed in the webapp reaches IT', async () => {
@@ -270,12 +275,12 @@ export class BridgeSelfTest {
         });
 
         await this.step('D3', 'A player removed in IT stays alive in the webapp', async () => {
-            if (!this.ids.ogg) throw new SkipStep('C1 did not add Ogg');
-            this.it.removeCreature(this.ids.ogg);
+            if (!this.ids.long) throw new SkipStep(`C1 did not add ${SHORT_PC}`);
+            this.it.removeCreature(this.ids.long);
             await sleep(SETTLE_MS);
-            const ogg = (await this.combatants()).find(c => c.name === LONG_PC);
-            if (!ogg) throw new Error('Ogg is gone from the webapp');
-            if (ogg.isDead) throw new Error('Ogg was marked dead');
+            const player = (await this.combatants()).find(c => c.id === this.webappIds.long);
+            if (!player) throw new Error(`${SHORT_PC} is gone from the webapp`);
+            if (player.isDead) throw new Error(`${SHORT_PC} was marked dead`);
         });
 
         await this.step('A3', 'Reconnecting adds nobody twice and keeps removed monsters out', async () => {
