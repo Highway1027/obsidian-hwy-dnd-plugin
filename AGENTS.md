@@ -4,7 +4,7 @@ Rules and context for every AI coding agent (Claude Code, Antigravity, Codex). T
 
 Paths below use `<drive>`: `D:` on Tim's desktop, `C:` on his other PCs.
 
-**Start of a session:** read `docs/STATUS.md`.
+**Start of a session:** read `docs/STATUS.md`. Hand tests still open are in `docs/TESTING.md` (sittings; how to write them is at its top).
 
 ## What this is
 
@@ -50,5 +50,5 @@ Work on `develop`. Merging to `main` with a new version in `manifest.json` publi
 
 - At session start name the top open items from `docs/STATUS.md`. When a new idea comes up mid-task, ask **"Now, or park it in the backlog?"** (small same-area fixes excepted); parked ideas go to the Inbox in `docs/STATUS.md`.
 - Skills: `plugin-release` (`.claude/skills/`; Antigravity loads it through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
-- End of a session: update `docs/STATUS.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit.
+- End of a session: update `docs/STATUS.md` and `docs/TESTING.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit.
 - Tim prefers plain English, short sentences, dates as DD-MM-YYYY.
