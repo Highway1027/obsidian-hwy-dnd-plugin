@@ -2,6 +2,12 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - Drag fix, release 0.7.0
+
+- Sitting J1 (self-test on the 16:44 build): 23 passed, A5 skipped (Tim deleted his test character to test the webapp's new delete). J2 failed: Ogg dragged from 4 to 20 in IT stayed unseen until the next turn, then went back to 4.
+- Cause: IT 13.0.18's drop handler sets the tracker store directly (`store.set`) and fires no `initiative-tracker:save-state`. Fix: `itAccess.onStoreChange` subscribes to the store and schedules the same quiet run. Self-test R5/R6 drag via `dragCreature`, a copy of IT's drop handler.
+- Released 0.7.0 at Tim's request before J2-J4 ran on the new build (still open in sitting J). 72 tests and build passed.
+
 ## 21-10-2026 - Sync reliability (develop, not released)
 
 - Tim approved the three parts, built in the order 2, 3, 1 (one commit each). (2) `quietRunner.ts`: IT saves handled after 300 ms of quiet, never two runs at once. (3) `patch.ts`: every bridge write is a field patch applied to the newest tracker in a transaction, via `commitPatch` (link pass too). The webapp already used transactions, so no rules change.

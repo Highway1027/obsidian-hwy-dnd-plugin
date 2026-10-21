@@ -1,6 +1,6 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing for development. Release 0.7.0 waits for sitting J.
+**Blocking right now:** nothing. 0.7.0 is released; sitting J checks it.
 
 Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 21-10-2026.
 
@@ -28,14 +28,14 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sitting H passed. Feedback: the player added back had no HP in IT. Fixed (sitting I).
 - 21-10-2026: sitting I passed (0.6.0: a player added back keeps HP, max HP and AC).
 - 21-10-2026: sitting D (webapp crash checks from 27-09-2026) dropped: no such crashes seen since.
+- 21-10-2026: sitting J on the 16:44 build: self-test 23 passed, A5 skipped (test character deleted). J2 failed: a drag in IT was only seen at the next turn. Fixed in 0.7.0 (bridge watches IT's store); J redone below.
 
 ---
 
-## Sitting J - Sync reliability (about 10 minutes)
+## Sitting J - Sync reliability, 0.7.0 (about 10 minutes)
 
 **Before you start**
-- The build of 21-10-2026 18:52 is in the vault (`npm run vault`, still says 0.6.0). Reload the plugin.
-- 21-10-2026 16:44 build: J1 passed (23, A5 skipped: test character deleted). J2 failed: a drag in IT was only seen at the next turn, then Ogg jumped back from 20 to 4. Fixed: the bridge now also watches IT's store (IT's drop fires no save event). New self-test steps R5, R6.
+- 0.7.0 is in the vault (`npm run vault`, 21-10-2026 after the release; BRAT shows it as up to date). Reload the plugin. On another PC: update to 0.7.0 via BRAT.
 - Self-test campaign set in the plugin settings (the "TEST - Arc van Noah" copy). Initiative Tracker view open.
 
 **Steps**
