@@ -55,5 +55,5 @@ Work on `develop`. Merging to `main` with a new version in `manifest.json` publi
 
 - At session start name the top open items from `docs/STATUS.md`. When a new idea comes up mid-task, ask **"Now, or park it in the backlog?"** (small same-area fixes excepted); parked ideas go to the Inbox in `docs/STATUS.md`.
 - Skills: `plugin-release` (`.claude/skills/`; Antigravity loads it through `.agent/skills.json`). Fix a skill as soon as it proves wrong; propose one when a routine repeats.
-- End of a session: update `docs/STATUS.md` and `docs/TESTING.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit.
+- End of a session: update `docs/STATUS.md` and `docs/TESTING.md`, add 3 to 6 lines at the top of `docs/SESSION_HISTORY.md` (what changed, decisions, gotchas), commit. Then, when the next steps are clear, end with a short **kickstart prompt** Tim can paste into the next chat, in a fenced code block: what to check or decide first and what to build. A few lines; point to `docs/STATUS.md` instead of repeating it. Skip it when the next step is unclear and say why.
 - Tim prefers plain English, short sentences, dates as DD-MM-YYYY.

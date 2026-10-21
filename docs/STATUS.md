@@ -4,10 +4,11 @@ Start here. Current state and open work only. Last update: 21-10-2026.
 
 ## Now
 
-- **0.5.2** released 21-10-2026 (main `afeb39a`, tag `0.5.2`): adds Ctrl+P → "Run bridge self-test (test campaign)". It passed 19/19 in Tim's desktop vault on "TEST - Arc van Noah" (uses Tim's own "TEST - HP TESTER" for player HP), so the bridge sync of 0.5.0/0.5.1 is checked. No bridge code changes since 0.5.1.
+- **0.6.0** released 21-10-2026 (main `b9301b9`, tag `0.6.0`): everything below that was on `develop` (bridge button, one-click reconnect, new connect window, new encounter, players added back). The DM updates via BRAT.
+- **0.5.2** released 21-10-2026: adds Ctrl+P → "Run bridge self-test (test campaign)". It passed 19/19 in Tim's desktop vault on "TEST - Arc van Noah" (uses Tim's own "TEST - HP TESTER" for player HP), so the bridge sync of 0.5.0/0.5.1 is checked. No bridge code changes since 0.5.1.
 - **Hand tests passed 21-10-2026:** sittings B (restart, IT's buttons), C (DM's PC) and E (pane button). Sittings F and G (new encounter removes the players, creates a tracker by itself) passed too. Sitting H passed. Still open: sitting I and the webapp quick checks (D).
-- **On `develop`, not released:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens; the new tracker's name is an empty field with the date and time as grey placeholder), and "New encounter" while connected removes IT's kept players and connects straight to a new empty webapp tracker (the DM adds the party in the webapp, the bridge brings it to IT). A player character removed in IT by accident is added back from the webapp, with a message. Hand test: sitting I.
-- **Next:** sitting I, then release 0.6.0; then the sync-reliability work (Inbox).
+- **In 0.6.0:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens; the new tracker's name is an empty field with the date and time as grey placeholder), and "New encounter" while connected removes IT's kept players and connects straight to a new empty webapp tracker (the DM adds the party in the webapp, the bridge brings it to IT). A player character removed in IT by accident is added back from the webapp, with a message. Hand test: sitting I.
+- **Next:** sitting I on 0.6.0; then the sync-reliability work (Inbox).
 
 ## Known issues
 

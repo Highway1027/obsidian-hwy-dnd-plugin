@@ -30,7 +30,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 ## Sitting I: A player added back keeps their HP (≈ 3 min)
 
-**Before you start:** the build from `develop` is already in the desktop vault (21-10-2026); reload the plugin once. IT connected to a tracker with players and monsters.
+**Before you start:** update to 0.6.0 via BRAT (or copy the release files) and reload Obsidian. IT connected to a tracker with players and monsters.
 - [ ] I1. Ctrl+P → "Run bridge self-test". All steps pass, including the new D3.1 (a campaign character removed in IT comes back with its HP).
 - [ ] I2. In a real tracker, remove a player in IT. They come back with their HP, max HP and AC from the webapp.
 - [ ] I3. Change that player's HP in the webapp. IT follows.

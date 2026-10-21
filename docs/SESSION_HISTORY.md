@@ -2,6 +2,11 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - Release 0.6.0
+
+- Released 0.6.0 (minor: new features since 0.5.2): bridge button, one-click reconnect, connect window redesign, new encounter, players added back. 52 tests and build passed; DM updates via BRAT.
+- AGENTS.md: end of a session now includes a kickstart prompt for the next chat (same rule as the webapp wrap-up skill).
+
 ## 21-10-2026 - A player removed in IT comes back
 
 - Tim passed sitting G. Feedback: the DM can remove a PC in IT by accident; the webapp keeps it (correct), but IT loses it.
