@@ -217,6 +217,24 @@ export class BridgeSelfTest {
             });
         });
 
+        await this.step('R1', 'Ten fast initiative changes in IT (like a drag) reach the webapp as the last value', async () => {
+            const writesBefore = this.bridge.trackerWrites;
+            for (let i = 1; i <= 10; i++) {
+                this.it.setCreatureInitiative(this.ids.boss, 20 + i);
+                await sleep(20);
+            }
+            await this.waitFor(async () => {
+                const list = await this.combatants();
+                const boss = list.find(c => c.obsidianId === this.ids.boss);
+                if (boss?.initiative !== 30) return `webapp Goblin Boss initiative is ${boss?.initiative}, expected 30`;
+                const names = list.map(c => c.name);
+                if (new Set(names).size !== names.length) return `a name appears twice: ${names.join(', ')}`;
+                return this.orderProblem();
+            });
+            const writes = this.bridge.trackerWrites - writesBefore;
+            if (writes > 2) throw new Error(`the bridge wrote the tracker ${writes} times for one burst (expected 1 or 2)`);
+        });
+
         await this.step('C1', 'A player character added in the webapp shows with its first name in IT', async () => {
             const list = await this.combatants();
             const added = this.webappPc('long', LONG_PC, 8);

@@ -12,6 +12,7 @@ import {
 import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
 import { markRemovedMonstersDead, playersToRestore, type RemovedCreature } from './removal';
 import type { TrackerSummary } from './connectChoices';
+import { QuietRunner } from './quietRunner';
 import {
     doc, getDoc, setDoc, updateDoc, collection,
     onSnapshot, getDocs, serverTimestamp,
@@ -23,6 +24,8 @@ import { getDb, getCurrentUser } from '../firebase';
 const ECHO_SUPPRESSION_MS = 2000;
 // Wait this long after a layout change before deciding the tracker view is really closed.
 const TRACKER_CLOSE_GRACE_MS = 1500;
+// IT saves are handled once IT has been quiet this long (a drag-and-drop fires many saves).
+const IT_QUIET_MS = 300;
 
 // The webapp is the master of the turn order (sortIndex). IT gets the real initiative
 // numbers plus manualOrder (the webapp position), which IT uses to break ties (ordering.ts).
@@ -82,6 +85,10 @@ export class InitiativeBridgeManager {
     private characterUnsubscribes: Unsubscribe[] = [];
     private itEventRefs: any[] = [];
     private trackerCloseTimer: number | null = null;
+    // Handles IT saves one at a time, after IT is quiet
+    private itRunner: QuietRunner | null = null;
+    // Tracker writes made by the bridge (the self-test counts them)
+    private writeCount = 0;
 
     // Echo loop prevention
     private suppressFirestoreUntil: number = 0;
@@ -109,6 +116,11 @@ export class InitiativeBridgeManager {
 
     get isConnected(): boolean {
         return this._isConnected;
+    }
+
+    /** How many times the bridge wrote the tracker since Obsidian started. */
+    get trackerWrites(): number {
+        return this.writeCount;
     }
 
     get trackerName(): string | null {
@@ -271,6 +283,7 @@ export class InitiativeBridgeManager {
 
         const added = [...plan.newPcCombatants, ...newMonsters];
         if (plan.relinks.length > 0 || added.length > 0) {
+            this.writeCount++;
             await updateDoc(trackerRef, {
                 combatants: [...combatants, ...added],
                 updatedAt: serverTimestamp(),
@@ -356,6 +369,8 @@ export class InitiativeBridgeManager {
             this.app.workspace.offref(ref);
         }
         this.itEventRefs = [];
+        this.itRunner?.stop();
+        this.itRunner = null;
         if (this.trackerCloseTimer !== null) {
             window.clearTimeout(this.trackerCloseTimer);
             this.trackerCloseTimer = null;
@@ -783,6 +798,7 @@ export class InitiativeBridgeManager {
 
         this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
         try {
+            this.writeCount++;
             await updateDoc(trackerRef, {
                 combatants: updated,
                 updatedAt: serverTimestamp(),
@@ -804,6 +820,11 @@ export class InitiativeBridgeManager {
     // ==========================================
 
     private startITListeners(): void {
+        this.itRunner = new QuietRunner(() => this.onITSaved(), IT_QUIET_MS, {
+            set: (fn, ms) => window.setTimeout(fn, ms),
+            clear: (handle) => window.clearTimeout(handle),
+        });
+
         const saveRef = (this.app.workspace as any).on(
             'initiative-tracker:save-state',
             (state?: ITViewState) => {
@@ -813,16 +834,7 @@ export class InitiativeBridgeManager {
                     this.handleNewEncounter();
                     return;
                 }
-
-                if (Date.now() < this.suppressITUntil) {
-                    // Webapp changes arrive all the time (players' HP), so a DM removal in this
-                    // window must not be lost with the echo.
-                    this.restoreRemovedPlayers();
-                    this.writeRemovedMonsterDeaths();
-                    this.snapshotITState();
-                    return;
-                }
-                this.handleITStateChange();
+                this.itRunner?.schedule();
             }
         );
         this.itEventRefs.push(saveRef);
@@ -850,6 +862,21 @@ export class InitiativeBridgeManager {
             }
         );
         this.itEventRefs.push(newEncounterRef);
+    }
+
+    /** One run for all IT saves since the last run (QuietRunner). */
+    private async onITSaved(): Promise<void> {
+        if (!this._isConnected || this.isDisconnecting) return;
+
+        if (Date.now() < this.suppressITUntil) {
+            // Webapp changes arrive all the time (players' HP), so a DM removal in this
+            // window must not be lost with the echo.
+            this.restoreRemovedPlayers();
+            await this.writeRemovedMonsterDeaths();
+            this.snapshotITState();
+            return;
+        }
+        await this.handleITStateChange();
     }
 
     /**
@@ -930,6 +957,7 @@ export class InitiativeBridgeManager {
         this.lastFirestoreState = { ...this.lastFirestoreState, combatants };
         this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
         try {
+            this.writeCount++;
             await updateDoc(doc(getDb(), 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId), {
                 combatants,
                 updatedAt: serverTimestamp(),
@@ -1127,6 +1155,7 @@ export class InitiativeBridgeManager {
         if (Object.keys(firestoreUpdate).length > 1) {
             this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
             try {
+                this.writeCount++;
                 await updateDoc(trackerRef, firestoreUpdate);
                 if (needsFullCombatantUpdate) {
                     this.lastFirestoreState = { ...this.lastFirestoreState, ...firestoreUpdate };
