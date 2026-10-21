@@ -235,6 +235,30 @@ export class BridgeSelfTest {
             if (writes > 2) throw new Error(`the bridge wrote the tracker ${writes} times for one burst (expected 1 or 2)`);
         });
 
+        await this.step('R2', 'A webapp change made just before the bridge writes is kept', async () => {
+            let played = false;
+            this.bridge.beforeTrackerWrite = async () => {
+                // The webapp writes while the bridge has its change ready but has not written it yet.
+                const list = await this.combatants();
+                const boss = list.find(c => c.obsidianId === this.ids.boss)!;
+                await this.webappWrite(editCombatant(list, boss.id!, { tempHp: 5 }));
+                played = true;
+            };
+            try {
+                this.it.setCreatureHP(this.ids.bugbear, 22);
+                await this.waitFor(async () => {
+                    if (!played) return 'the bridge did not write';
+                    const list = await this.combatants();
+                    const bugbear = list.find(c => c.obsidianId === this.ids.bugbear);
+                    const boss = list.find(c => c.obsidianId === this.ids.boss);
+                    if (bugbear?.hp !== 22) return `webapp Bugbear HP is ${bugbear?.hp}, expected 22`;
+                    return boss?.tempHp === 5 ? null : `the webapp's change was lost (Goblin Boss temp HP ${boss?.tempHp}, expected 5)`;
+                });
+            } finally {
+                this.bridge.beforeTrackerWrite = null;
+            }
+        });
+
         await this.step('C1', 'A player character added in the webapp shows with its first name in IT', async () => {
             const list = await this.combatants();
             const added = this.webappPc('long', LONG_PC, 8);

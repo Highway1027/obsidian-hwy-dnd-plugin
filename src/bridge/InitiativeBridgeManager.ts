@@ -13,8 +13,9 @@ import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from
 import { markRemovedMonstersDead, playersToRestore, type RemovedCreature } from './removal';
 import type { TrackerSummary } from './connectChoices';
 import { QuietRunner } from './quietRunner';
+import { applyPatch, changesBetween, isEmptyPatch, type TrackerPatch } from './patch';
 import {
-    doc, getDoc, setDoc, updateDoc, collection,
+    doc, getDoc, setDoc, collection, runTransaction,
     onSnapshot, getDocs, serverTimestamp,
     type Unsubscribe
 } from '../firebase';
@@ -89,6 +90,11 @@ export class InitiativeBridgeManager {
     private itRunner: QuietRunner | null = null;
     // Tracker writes made by the bridge (the self-test counts them)
     private writeCount = 0;
+    // Bridge writes run one after the other
+    private writeChain: Promise<void> = Promise.resolve();
+    private lastWriteFailNotice = 0;
+    // Self-test only: runs once just before the next tracker write (to play a webapp change in between)
+    public beforeTrackerWrite: (() => Promise<void>) | null = null;
 
     // Echo loop prevention
     private suppressFirestoreUntil: number = 0;
@@ -263,35 +269,46 @@ export class InitiativeBridgeManager {
         if (!db) throw new Error('Firestore not initialized');
 
         const trackerRef = doc(db, 'caravans', caravanId, 'initiativeTrackers', trackerId);
-        const snap = await getDoc(trackerRef);
-        if (!snap.exists()) throw new Error('Tracker not found');
-
-        const existingCombatants: WebappCombatant[] = snap.data().combatants || [];
         const liveCreatures = this.itAccess.getOrderedCreatures();
         const pcs = await this.loadCaravanPcs(caravanId);
-        const plan = planLinks(existingCombatants, liveCreatures.map(toCreatureRef), pcs);
 
-        const combatants = existingCombatants.map(c => ({ ...c }));
-        for (const { index, obsidianId } of plan.relinks) {
-            combatants[index].obsidianId = obsidianId;
-        }
+        // Planned on the newest tracker inside a transaction, so a webapp change made meanwhile is kept.
+        let unlinkedPlayers: string[] = [];
+        let summary: string | null = null;
+        await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(trackerRef);
+            if (!snap.exists()) throw new Error('Tracker not found');
 
-        // IT monsters the tracker doesn't know yet (players are handled by the link plan).
-        const newMonsters = liveCreatures
-            .filter((c: any) => !c.player && !plan.claimedItIds.has(c.id))
-            .map(monsterCombatantFromIT);
+            const existingCombatants: WebappCombatant[] = snap.data().combatants || [];
+            const plan = planLinks(existingCombatants, liveCreatures.map(toCreatureRef), pcs);
+            unlinkedPlayers = plan.unlinkedPlayers;
+            summary = null;
 
-        const added = [...plan.newPcCombatants, ...newMonsters];
-        if (plan.relinks.length > 0 || added.length > 0) {
+            const combatants = existingCombatants.map(c => ({ ...c }));
+            for (const { index, obsidianId } of plan.relinks) {
+                combatants[index].obsidianId = obsidianId;
+            }
+
+            // IT monsters the tracker doesn't know yet (players are handled by the link plan).
+            const newMonsters = liveCreatures
+                .filter((c: any) => !c.player && !plan.claimedItIds.has(c.id))
+                .map(monsterCombatantFromIT);
+
+            const added = [...plan.newPcCombatants, ...newMonsters];
+            if (plan.relinks.length > 0 || added.length > 0) {
+                transaction.update(trackerRef, {
+                    combatants: [...combatants, ...added],
+                    updatedAt: serverTimestamp(),
+                });
+                summary = `${plan.relinks.length} relinked, ${plan.newPcCombatants.length} PCs linked, ${newMonsters.length} monsters added`;
+            }
+        });
+        if (summary) {
             this.writeCount++;
-            await updateDoc(trackerRef, {
-                combatants: [...combatants, ...added],
-                updatedAt: serverTimestamp(),
-            });
-            console.log(`[Bridge] Link pass: ${plan.relinks.length} relinked, ${plan.newPcCombatants.length} PCs linked, ${newMonsters.length} monsters added`);
+            console.log(`[Bridge] Link pass: ${summary}`);
         }
 
-        this.noticeUnlinkedPlayers(plan.unlinkedPlayers);
+        this.noticeUnlinkedPlayers(unlinkedPlayers);
     }
 
     /**
@@ -788,24 +805,65 @@ export class InitiativeBridgeManager {
 
         console.log(`[Bridge] Assigned obsidianId "${obsidianId}" to "${combatant.name}"`);
 
-        const trackerRef = doc(db, 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId);
         const currentCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
         const sameCombatant = (c: WebappCombatant) => combatant.id ? c.id === combatant.id : c.name === combatant.name;
 
+        // Keep the cache current, so the next link in the same webapp update sees this IT id as taken.
         const updated = currentCombatants.map(c => sameCombatant(c) ? { ...c, obsidianId } : c);
-        // Keep the cache current so several assignments in a row don't overwrite each other.
         this.lastFirestoreState = { ...this.lastFirestoreState, combatants: updated };
 
+        const match = combatant.id ? { id: combatant.id, name: combatant.name } : { name: combatant.name };
+        await this.commitPatch(this.caravanId, this.trackerId, { changes: [{ match, fields: { obsidianId } }], add: [] });
+    }
+
+    /**
+     * Write a change to the webapp tracker. The patch is applied to the newest tracker inside a
+     * transaction (patch.ts), so a webapp change made meanwhile is kept; the webapp writes the
+     * same way. Writes go one at a time. Returns false when the write failed.
+     */
+    private commitPatch(caravanId: string, trackerId: string, patch: TrackerPatch): Promise<boolean> {
+        const run = this.writeChain.then(() => this.runPatch(caravanId, trackerId, patch));
+        this.writeChain = run.then(() => undefined, () => undefined);
+        return run;
+    }
+
+    private async runPatch(caravanId: string, trackerId: string, patch: TrackerPatch): Promise<boolean> {
+        const db = getDb();
+        if (!db) return false;
+        const hook = this.beforeTrackerWrite;
+        if (hook) {
+            this.beforeTrackerWrite = null;
+            await hook();
+        }
+
+        const trackerRef = doc(db, 'caravans', caravanId, 'initiativeTrackers', trackerId);
         this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
         try {
-            this.writeCount++;
-            await updateDoc(trackerRef, {
-                combatants: updated,
-                updatedAt: serverTimestamp(),
+            const wrote = await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(trackerRef);
+                if (!snap.exists()) throw new Error('Tracker not found');
+                const data = snap.data();
+                const result = applyPatch(data.combatants || [], patch);
+                const update: Record<string, unknown> = {};
+                if (result.changed) update.combatants = result.combatants;
+                if (result.turn !== null && result.turn !== data.turn) update.turn = result.turn;
+                if (Object.keys(update).length === 0) return false;
+                transaction.update(trackerRef, { ...update, updatedAt: serverTimestamp() });
+                return true;
             });
+            if (wrote) this.writeCount++;
+            return true;
         } catch (err) {
-            console.error('[Bridge] Failed to assign obsidianId:', err);
+            console.error('[Bridge] Tracker write failed:', err);
+            this.noticeWriteFailed();
+            return false;
         }
+    }
+
+    private noticeWriteFailed(): void {
+        if (Date.now() - this.lastWriteFailNotice < 30000) return;
+        this.lastWriteFailNotice = Date.now();
+        new Notice('⚠️ Could not save to the webapp (offline?). The bridge tries again with your next change in Obsidian.', 8000);
     }
 
     private handleRemovedCombatantFromFirestore(combatant: WebappCombatant): void {
@@ -949,22 +1007,13 @@ export class InitiativeBridgeManager {
         const removed = this.removedSinceSnapshot();
         if (removed.length === 0) return;
 
-        const combatants: WebappCombatant[] = (this.lastFirestoreState.combatants || []).map((c: WebappCombatant) => ({ ...c }));
+        const cached: WebappCombatant[] = this.lastFirestoreState.combatants || [];
+        const combatants = cached.map(c => ({ ...c }));
         const killed = markRemovedMonstersDead(combatants, removed, this.lastFirestoreState.round);
         if (killed.length === 0) return;
 
         console.log(`[Bridge] Removed in IT, now dead in the webapp: ${killed.join(', ')}`);
-        this.lastFirestoreState = { ...this.lastFirestoreState, combatants };
-        this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
-        try {
-            this.writeCount++;
-            await updateDoc(doc(getDb(), 'caravans', this.caravanId, 'initiativeTrackers', this.trackerId), {
-                combatants,
-                updatedAt: serverTimestamp(),
-            });
-        } catch (err) {
-            console.error('[Bridge] Failed to mark removed monsters dead:', err);
-        }
+        await this.commitPatch(this.caravanId, this.trackerId, { changes: changesBetween(cached, combatants), add: [] });
     }
 
     private scheduleTrackerCloseCheck(): void {
@@ -993,9 +1042,9 @@ export class InitiativeBridgeManager {
         // Get live Creature objects from the IT plugin
         const liveCreatures = this.itAccess.getOrderedCreatures();
 
-        // Current Firestore combatants (copies, so a failed write leaves the cache untouched)
-        const currentFirestoreCombatants: WebappCombatant[] =
-            (this.lastFirestoreState?.combatants || []).map((c: WebappCombatant) => ({ ...c }));
+        // Current Firestore combatants, and copies to edit: the patch is the difference.
+        const cachedCombatants: WebappCombatant[] = this.lastFirestoreState?.combatants || [];
+        const currentFirestoreCombatants: WebappCombatant[] = cachedCombatants.map(c => ({ ...c }));
         const firestoreByObsId = new Map(
             currentFirestoreCombatants
                 .filter(c => c.obsidianId)
@@ -1005,7 +1054,6 @@ export class InitiativeBridgeManager {
             currentFirestoreCombatants.map(c => [c.name, c])
         );
 
-        const firestoreUpdate: any = { updatedAt: serverTimestamp() };
         let needsFullCombatantUpdate = false;
 
         // Build current ID set
@@ -1134,35 +1182,22 @@ export class InitiativeBridgeManager {
             }
         }
 
-        // --- Build final combatant array ---
-        // Add new combatants (no removal — that's webapp-only) and set sortIndex the way the
-        // webapp does, so new combatants and initiative edits get their place straight away.
+        // --- Final combatant list (for the IT order below) ---
+        // New combatants are added (no removal — that's webapp-only), with sortIndex the way
+        // the webapp sets it, so new combatants and initiative edits get their place straight away.
         const finalCombatants = needsFullCombatantUpdate
             ? withSortIndex([...currentFirestoreCombatants, ...newCombatants])
             : currentFirestoreCombatants;
-        if (needsFullCombatantUpdate) {
-            firestoreUpdate.combatants = finalCombatants;
-        }
 
-        if (activeId) {
-            const turnIndex = webappOrder(finalCombatants).findIndex(fc => fc.id === activeId);
-            if (turnIndex >= 0) {
-                firestoreUpdate.turn = turnIndex;
-            }
-        }
-
-        // --- Write to Firestore ---
-        if (Object.keys(firestoreUpdate).length > 1) {
-            this.suppressFirestoreUntil = Date.now() + ECHO_SUPPRESSION_MS;
-            try {
-                this.writeCount++;
-                await updateDoc(trackerRef, firestoreUpdate);
-                if (needsFullCombatantUpdate) {
-                    this.lastFirestoreState = { ...this.lastFirestoreState, ...firestoreUpdate };
-                }
-            } catch (err) {
-                console.error('[Bridge] Firestore write error:', err);
-            }
+        // --- Write to Firestore: only what changed, applied to the newest tracker ---
+        const patch: TrackerPatch = {
+            changes: changesBetween(cachedCombatants, currentFirestoreCombatants),
+            add: newCombatants,
+            turnTo: activeId,
+        };
+        if (!isEmptyPatch(patch)) {
+            // On failure keep the old IT snapshot, so the next IT change sends this one again.
+            if (!await this.commitPatch(this.caravanId, this.trackerId, patch)) return;
 
             // Re-read after the echo window, in case the webapp changed something meanwhile
             // (the bridge ignores Firestore updates during that window).
