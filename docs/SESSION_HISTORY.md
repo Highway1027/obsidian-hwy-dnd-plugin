@@ -8,7 +8,8 @@ Short log for troubleshooting. Newest first, 3 to 6 lines per session; details i
 - New: bridge button in IT's pane (`TrackerPaneButton.ts`), IT's code untouched. First via `view.addAction`, but a pane in the sidebar has no header (where the DM keeps IT), so it now sits first in IT's own icon row (`.buttons > .clean`, selector in `itPluginAccess.ts`), built with `ExtraButtonComponent` like IT's icons. A MutationObserver puts it back when IT redraws; header only as a fallback after 3 s.
 - One-click reconnect (`reconnect.ts`, tested): only to the last tracker, only within 12 h of the last connect, so next week's fight is never merged into last week's tracker. The self-test's test tracker is never remembered.
 - New encounter: the manager calls `onNewEncounter`; main.ts clears the last tracker and shows a sticky notice with "Create a new webapp tracker for this encounter".
-- Not tested in Obsidian yet (sitting D).
+- Tim confirmed the button works in the sidebar.
+- Connect window redesigned: one radio list (new tracker with editable name first, then existing trackers newest first with "updated ... ago" and a "last used" badge), campaign + IT summary on top, button text says what happens, double-click connects. Preselection uses the same 12 h rule as the pane button. Pure helpers in `connectChoices.ts` (tested); tracker names now `Combat DD-MM-YYYY HH:MM`. Rest of sitting D not tested yet.
 
 ## 21-10-2026 - Self-test runs, fixes, release 0.5.2
 

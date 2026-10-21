@@ -11,6 +11,7 @@ import {
 } from './linking';
 import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
 import { markRemovedMonstersDead, type RemovedCreature } from './removal';
+import type { TrackerSummary } from './connectChoices';
 import {
     doc, getDoc, setDoc, updateDoc, collection,
     onSnapshot, getDocs, serverTimestamp,
@@ -135,7 +136,7 @@ export class InitiativeBridgeManager {
     // CONNECTION LIFECYCLE
     // ==========================================
 
-    async fetchActiveTrackers(caravanId: string): Promise<any[]> {
+    async fetchActiveTrackers(caravanId: string): Promise<TrackerSummary[]> {
         const db = getDb();
         if (!db) throw new Error('Firestore not initialized');
 
@@ -147,7 +148,24 @@ export class InitiativeBridgeManager {
             name: d.data().name || 'Unnamed',
             round: d.data().round || 1,
             combatantCount: (d.data().combatants || []).length,
+            updatedAt: d.data().updatedAt?.toMillis?.() ?? 0,
         }));
+    }
+
+    /** The campaign's name, or null when it can't be read. */
+    async fetchCaravanName(caravanId: string): Promise<string | null> {
+        try {
+            const snap = await getDoc(doc(getDb(), 'caravans', caravanId));
+            return snap.exists() ? (snap.data().name || null) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** What is in IT right now (for the connect window). */
+    getEncounterSummary(): { creatures: number; players: number } {
+        const creatures = this.itAccess.getOrderedCreatures();
+        return { creatures: creatures.length, players: creatures.filter((c: any) => c.player).length };
     }
 
     /** Load the caravan's player characters (name + character id) for linking. */

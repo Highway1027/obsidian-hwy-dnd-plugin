@@ -8,6 +8,7 @@ import { signOutFirebase } from './src/firebase';
 import { BridgeSelfTest, SelfTestConfirmModal } from './src/selftest/BridgeSelfTest';
 import { TrackerPaneButtons } from './src/bridge/TrackerPaneButton';
 import { quickReconnectTarget } from './src/bridge/reconnect';
+import { defaultTrackerName } from './src/bridge/connectChoices';
 import { authenticateWithApiToken, isAuthenticated } from './src/firebase';
 
 // Define the settings that our plugin will store.
@@ -421,8 +422,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
         }
         try {
             if (!await this.ensureSignedIn()) return;
-            const now = new Date();
-            const name = `Combat - ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            const name = defaultTrackerName(new Date());
             const trackerId = await this.bridgeManager.createNewTracker(caravanId, name);
             await this.bridgeManager.connect(caravanId, trackerId);
             new Notice(`🟢 Bridge connected to new tracker "${name}"`);
@@ -447,6 +447,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
                 caravanId: this.settings.defaultCaravanId,
                 lastUsedCaravanId: this.settings.lastUsedCaravanId,
                 lastTrackerId: this.settings.lastTrackerId,
+                lastTrackerConnectedAt: this.settings.lastTrackerConnectedAt,
                 enableInitiativeBridge: this.settings.enableInitiativeBridge,
             },
             this.bridgeManager,
