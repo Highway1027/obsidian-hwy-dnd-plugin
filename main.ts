@@ -281,7 +281,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
                 }
                 this.refreshPaneButtons();
             };
-            this.bridgeManager.onNewEncounter = () => this.offerTrackerForNewEncounter();
+            this.bridgeManager.onNewEncounter = () => this.startTrackerForNewEncounter();
 
             // Bridge button in the header of IT's tracker pane
             this.paneButtons = new TrackerPaneButtons(this.app, () => this.onPaneButtonClick());
@@ -398,20 +398,13 @@ export default class HwysDnDToolsPlugin extends Plugin {
         }
     }
 
-    /** After IT's "New encounter": offer a fresh webapp tracker instead of the old one. */
-    private offerTrackerForNewEncounter(): void {
+    /** After IT's "New encounter": connect to a fresh webapp tracker, never the old one. */
+    private startTrackerForNewEncounter(): void {
         // The old tracker belongs to the last fight; the pane button must not reconnect to it.
         this.settings.lastTrackerId = '';
         this.settings.lastTrackerConnectedAt = 0;
         this.saveSettings();
-
-        const fragment = createFragment(f => {
-            f.createDiv({ text: 'New encounter in Obsidian. The bridge disconnected from the old webapp tracker.' });
-            const button = f.createEl('button', { text: 'Create a new webapp tracker for this encounter', cls: 'mod-cta' });
-            button.style.marginTop = '8px';
-            button.addEventListener('click', () => this.createTrackerForEncounter());
-        });
-        new Notice(fragment, 0);   // stays until the DM clicks it
+        this.createTrackerForEncounter();
     }
 
     private async createTrackerForEncounter(): Promise<void> {
@@ -425,7 +418,7 @@ export default class HwysDnDToolsPlugin extends Plugin {
             const name = defaultTrackerName(new Date());
             const trackerId = await this.bridgeManager.createNewTracker(caravanId, name);
             await this.bridgeManager.connect(caravanId, trackerId);
-            new Notice(`🟢 Bridge connected to new tracker "${name}"`);
+            new Notice(`🟢 New encounter: bridge connected to new tracker "${name}"`);
         } catch (err) {
             console.error('[Bridge] Creating a tracker for the new encounter failed:', err);
             new Notice(`❌ Could not create the tracker: ${String(err)}`, 8000);
