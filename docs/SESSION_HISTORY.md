@@ -2,6 +2,10 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 21-10-2026 - Testing cleanup
+
+- Tim passed sitting I (0.6.0: a player added back keeps HP, max HP and AC). Sitting D (webapp crash checks from 27-09-2026) dropped: it never belonged here, and Tim has seen no such crashes since. No open hand tests.
+
 ## 21-10-2026 - Release 0.6.0
 
 - Released 0.6.0 (minor: new features since 0.5.2): bridge button, one-click reconnect, connect window redesign, new encounter, players added back. 52 tests and build passed; DM updates via BRAT.
