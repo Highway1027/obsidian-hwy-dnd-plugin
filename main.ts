@@ -5,6 +5,7 @@ import { InitiativeBridgeManager } from './src/bridge/InitiativeBridgeManager';
 import { ShareInitiativeModal } from './src/bridge/ShareInitiativeModal';
 import { BridgeStatusView, BRIDGE_STATUS_VIEW_TYPE } from './src/bridge/BridgeStatusView';
 import { signOutFirebase } from './src/firebase';
+import { BridgeSelfTest, SelfTestConfirmModal } from './src/selftest/BridgeSelfTest';
 
 // Define the settings that our plugin will store.
 interface HwysDnDToolsSettings {
@@ -21,6 +22,7 @@ interface HwysDnDToolsSettings {
     };
     enableInitiativeBridge: boolean;
     lastUsedCaravanId: string;
+    selfTestCaravanId: string;
 }
 
 // Set the default values for the settings.
@@ -38,6 +40,7 @@ const DEFAULT_SETTINGS: HwysDnDToolsSettings = {
     },
     enableInitiativeBridge: false,
     lastUsedCaravanId: '',
+    selfTestCaravanId: '',
 }
 
 // This is the main class for our plugin.
@@ -312,6 +315,12 @@ export default class HwysDnDToolsPlugin extends Plugin {
                 name: 'Toggle Bridge Status Panel',
                 callback: () => this.toggleBridgeSidebar(),
             });
+
+            this.addCommand({
+                id: 'run-bridge-self-test',
+                name: 'Run bridge self-test (test campaign)',
+                callback: () => this.runBridgeSelfTest(),
+            });
         }
 
         this.addSettingTab(new HwysDnDToolsSettingTab(this.app, this));
@@ -336,6 +345,27 @@ export default class HwysDnDToolsPlugin extends Plugin {
             this.bridgeManager,
             async () => { await this.saveSettings(); }
         ).open();
+    }
+
+    /** Checks the safety conditions first, then asks before the self-test clears the IT encounter. */
+    private async runBridgeSelfTest(): Promise<void> {
+        if (!this.bridgeManager) return;
+        const test = new BridgeSelfTest(this.app, this.bridgeManager, {
+            apiToken: this.settings.apiToken,
+            caravanId: this.settings.selfTestCaravanId,
+            pluginVersion: this.manifest.version,
+        });
+        try {
+            const problem = await test.preflight();
+            if (problem) {
+                new Notice(`🧪 Self-test not started: ${problem}`, 10000);
+                return;
+            }
+        } catch (err) {
+            new Notice(`🧪 Self-test not started: ${String(err)}`, 10000);
+            return;
+        }
+        new SelfTestConfirmModal(this.app, test).open();
     }
 
     private async toggleBridgeSidebar(): Promise<void> {
@@ -895,6 +925,17 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
             const status = this.plugin.bridgeManager?.isConnected ? '🟢 Connected' : '⚪ Not Connected';
             bridgeInfo.createEl('p', { text: `Bridge Status: ${status}`, attr: { style: 'margin: 0; font-weight: bold;' } });
             bridgeInfo.createEl('p', { text: 'Use the command palette (Ctrl/Cmd + P) → "Share Initiative to Webapp" to connect.', attr: { style: 'margin: 4px 0 0 0; opacity: 0.7; font-size: 0.9em;' } });
+
+            new Setting(containerEl)
+                .setName('Self-test campaign ID')
+                .setDesc('ID of a webapp test copy ("TEST - ..."). The command "Run bridge self-test" only runs in that campaign, never in the real game.')
+                .addText(text => text
+                    .setPlaceholder('Test copy campaign ID')
+                    .setValue(this.plugin.settings.selfTestCaravanId)
+                    .onChange(async (value) => {
+                        this.plugin.settings.selfTestCaravanId = value.trim();
+                        await this.plugin.saveSettings();
+                    }));
         }
 
         // Command Reference
