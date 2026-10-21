@@ -20,6 +20,9 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | `src/bridge/ordering.ts` | Pure turn order: copy of the webapp sort, real initiative + `manualOrder` for IT (tested) |
 | `src/bridge/removal.ts` | Pure rule: monsters removed in IT become dead in the webapp (tested) |
 | `src/bridge/fieldMapping.ts` | Stat translation between IT and the webapp |
+| `src/bridge/patch.ts` | Pure: bridge writes as patches applied to the newest tracker in a transaction; echo fingerprint (tested) |
+| `src/bridge/itSnapshot.ts` | Pure: what the webapp already knows of IT; the bridge's own IT changes fold into it (tested) |
+| `src/bridge/quietRunner.ts` | Pure: IT saves handled once IT is quiet (300 ms), one run at a time (tested) |
 | `src/bridge/BridgeStatusView.ts`, `ShareInitiativeModal.ts` | Sidebar status view, connect modal |
 | `src/bridge/TrackerPaneButton.ts` | Bridge button in IT's pane header (Obsidian `view.addAction`, IT untouched) |
 | `src/bridge/reconnect.ts` | Pure rule: one-click reconnect only to the last tracker, within 12 hours (tested) |
@@ -41,7 +44,7 @@ If git refuses with "dubious ownership" (the desktop folder was created on anoth
 
 ## Rules
 
-- **Webapp is the source of truth** for player characters (HP, AC from D&D Beyond sync); IT is the source for monsters added in Obsidian. Never let a sync echo bounce back (echo suppression in the manager).
+- **Webapp is the source of truth** for player characters (HP, AC from D&D Beyond sync); IT is the source for monsters added in Obsidian. Never let a sync echo bounce back, and never ignore changes for a time window instead: the bridge's own IT changes go through `asOwnITChange`, its tracker writes through `commitPatch` (transaction), and webapp updates wait while an IT change is on its way (see the top of the manager).
 - **Link by id, not name**: IT id ↔ webapp `obsidianId`. Names are only a fallback for the first match (full name, or first name when unique).
 - Keep matching and mapping logic pure (in `linking.ts` / `fieldMapping.ts`) and covered by `tests/`.
 - IT internals (Svelte stores) can change with IT updates: keep all IT access inside `itPluginAccess.ts`.

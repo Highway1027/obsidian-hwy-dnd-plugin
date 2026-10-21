@@ -83,6 +83,26 @@ function alreadyThere(list: WebappCombatant[], added: WebappCombatant): boolean 
         (added.pcId && added.type === 'Player Character' && c.pcId === added.pcId && c.type === 'Player Character'));
 }
 
+/** Key order does not matter, so a tracker read back from Firestore matches what was written. */
+function stable(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+    if (value && typeof value === 'object') {
+        const entries = Object.keys(value).sort()
+            .filter(k => (value as any)[k] !== undefined)
+            .map(k => `${JSON.stringify(k)}:${stable((value as any)[k])}`);
+        return `{${entries.join(',')}}`;
+    }
+    return JSON.stringify(value ?? null);
+}
+
+/**
+ * What a tracker holds for the bridge (combatants and turn) as one string. The bridge remembers
+ * this for its own writes: a webapp update that matches one is the echo of that write.
+ */
+export function trackerFingerprint(combatants: WebappCombatant[] | undefined, turn: number | undefined): string {
+    return stable({ combatants: combatants ?? [], turn: turn ?? 0 });
+}
+
 /**
  * Apply a patch to the newest combatant list. Fields are only set where they differ, new
  * combatants are only added once, and sortIndex is set the way the webapp does when anything

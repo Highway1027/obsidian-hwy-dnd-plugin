@@ -84,6 +84,24 @@ describe('QuietRunner', () => {
         assert.equal(runs, 2);
     });
 
+    it('calls onIdle once the last run is done, not between runs', async () => {
+        const timers = fakeTimers();
+        const events = [];
+        let release;
+        const r = new QuietRunner(async () => {
+            events.push('run');
+            await new Promise(res => { release = res; });
+        }, 300, timers, () => events.push('idle'));
+        r.schedule(); await timers.advance(300);
+        r.schedule();                                  // during the run
+        release(); await timers.advance(0);
+        assert.deepEqual(events, ['run'], 'a second run is waiting, so not idle yet');
+        await timers.advance(300);
+        release(); await timers.advance(0);
+        assert.deepEqual(events, ['run', 'run', 'idle']);
+        assert.equal(r.isBusy, false);
+    });
+
     it('stop cancels a waiting run', async () => {
         const timers = fakeTimers();
         let runs = 0;

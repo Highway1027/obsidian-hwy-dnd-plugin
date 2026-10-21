@@ -22,6 +22,8 @@ export class QuietRunner {
         private task: () => Promise<void>,
         private delayMs: number,
         private timers: Timers,
+        /** Called when a run ends and no other run is waiting. */
+        private onIdle: () => void = () => {},
     ) {}
 
     get isBusy(): boolean {
@@ -61,6 +63,8 @@ export class QuietRunner {
         if (this.again && !this.stopped) {
             this.again = false;
             this.schedule();
+        } else if (!this.stopped && this.timer === null) {
+            this.onIdle();
         }
     }
 }

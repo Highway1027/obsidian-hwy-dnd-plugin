@@ -38,6 +38,16 @@ describe('changesBetween', () => {
     });
 });
 
+describe('trackerFingerprint', () => {
+    it('ignores key order and undefined fields, sees real differences', () => {
+        const a = P.trackerFingerprint([{ id: 'a', name: 'Goblin', hp: 3 }], 1);
+        assert.equal(a, P.trackerFingerprint([{ hp: 3, name: 'Goblin', id: 'a', note: undefined }], 1));
+        assert.notEqual(a, P.trackerFingerprint([{ id: 'a', name: 'Goblin', hp: 4 }], 1));
+        assert.notEqual(a, P.trackerFingerprint([{ id: 'a', name: 'Goblin', hp: 3 }], 2));
+        assert.equal(P.trackerFingerprint(undefined, undefined), P.trackerFingerprint([], 0));
+    });
+});
+
 describe('applyPatch', () => {
     it('keeps a webapp change made after the bridge read its cache', () => {
         const cache = [monster('a', 'Goblin', 12), monster('b', 'Orc', 8)];
