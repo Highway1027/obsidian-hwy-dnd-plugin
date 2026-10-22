@@ -11,7 +11,10 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - **A step you don't mention counts as passed.**
 - What the sitting needs (plugin version, IT version, a tracker with players and monsters) goes in "Before you start".
 - **Self-test first**: what the bridge does with IT and the webapp gets a step in the self-test (`src/selftest/BridgeSelfTest.ts`, step ids like the sittings). Hand sittings only hold what it can't check: an Obsidian restart, IT's own buttons and panes, the webapp's look, the DM's PC. Pure rules belong in `tests/` (`npm test`). Mark a step *assumed* when an earlier result covers it.
-- **Before you start** names the build to test: "the build of DD-MM-YYYY HH:MM is in the vault (`npm run vault`); reload the plugin", or "update to <version> via BRAT". The agent runs `npm run vault` itself before handing over a sitting.
+- **Before you start** holds only what Tim checks or does, plus how to check he has the right build (Tim, 22-10-2026: keep agent reminders out of it):
+  - Release: "Community plugins shows Highway DnD Tools <version>. If not: BRAT → update, restart Obsidian."
+  - Unreleased build: "Community plugins shows <version>; restart Obsidian (or turn the plugin off and on) to load the build of DD-MM-YYYY HH:MM."
+  - Agent steps (`npm run vault`, deploys) are done before the sitting is handed over and never appear in it. If one could not be done, the sitting says what Tim must do instead.
 - When a release passes, remove its steps and add one dated line under Results.
 
 **If something goes wrong:** open Obsidian's console (Ctrl+Shift+I) and copy the lines starting with `[Bridge]`.
@@ -35,8 +38,9 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 ## Sitting J - Sync reliability, 0.7.0 (about 10 minutes)
 
 **Before you start**
-- 0.7.0 is in the vault (`npm run vault`, 21-10-2026 after the release; BRAT shows it as up to date). Reload the plugin. On another PC: update to 0.7.0 via BRAT.
-- Self-test campaign set in the plugin settings (the "TEST - Arc van Noah" copy). Initiative Tracker view open.
+- Obsidian → Settings → Community plugins shows Highway DnD Tools **0.7.0**. If not: BRAT → update the plugin, then restart Obsidian.
+- Plugin settings: self-test campaign is the "TEST - Arc van Noah" copy.
+- Initiative Tracker view is open.
 
 **Steps**
 - [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 26 steps passed (A5 skips without a character of yours). R5-R6 are new: drags in IT.

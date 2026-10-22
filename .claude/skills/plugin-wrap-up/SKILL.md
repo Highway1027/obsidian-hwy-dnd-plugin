@@ -8,7 +8,7 @@ description: End-of-session routine for the Highway DnD Tools Obsidian plugin - 
 1. **docs/STATUS.md**: remove finished items, add new open work, update the "Now" lines and the date. Keep it short; it is read at every session start.
 2. **docs/SESSION_HISTORY.md**: add one entry at the top, `## DD-MM-YYYY - <topic>`, 3 to 6 bullets: what changed, decisions and why, gotchas, what was released. Delete entries older than about two months.
 3. **docs/TESTING.md**: add every check this session could not do to a sitting (rules at its top; self-test steps first). Remove what Tim reported as passed and add a dated line under Results. Update "Blocking right now".
-4. **Newest build in the vault**: if a sitting tests code that is not in a release, run `npm run vault` and put "the build of DD-MM-YYYY HH:MM is in the vault; reload the plugin" in its "Before you start". If it tests a release, say "update to <version> via BRAT".
+4. **Newest build in the vault**: if a sitting tests code that is not in a release, run `npm run vault` yourself. Its "Before you start" then only says what Tim checks or does (wording at the top of TESTING.md): which version and build he should see, and to restart Obsidian or update via BRAT. No agent commands in it.
 5. **Inbox** (in STATUS): for ideas parked this session, ask Tim in one line each: plan it, keep it, or drop it.
 6. **AGENTS.md**: only if a rule, command or file changed (file table). Procedures belong in skills.
 7. **Skills**: if a skill was wrong this session, make sure it is fixed; if a routine repeated without a skill, propose one.
