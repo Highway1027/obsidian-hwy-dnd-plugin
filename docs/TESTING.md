@@ -32,6 +32,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sitting I passed (0.6.0: a player added back keeps HP, max HP and AC).
 - 21-10-2026: sitting D (webapp crash checks from 27-09-2026) dropped: no such crashes seen since.
 - 21-10-2026: sitting J on the 16:44 build: self-test 23 passed, A5 skipped (test character deleted). J2 failed: a drag in IT was only seen at the next turn. Fixed in 0.7.0 (bridge watches IT's store); J redone below.
+- 22-10-2026: J1 and J2 passed on 0.7.0. Edge case: very fast drags one after another can still break sync. Feedback: a DM drag inside a tie the webapp already resolved should be kept and remembered, also when a new combatant with that initiative joins.
 
 ---
 
@@ -43,9 +44,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - Initiative Tracker view is open.
 
 **Steps**
-- [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 26 steps passed (A5 skips without a character of yours). R5-R6 are new: drags in IT.
-- [ ] J2. Connect to a tracker in the TEST campaign with a few monsters. Drag a monster to another place in IT. Within a second the webapp should show its new initiative; don't touch anything else. Drag a player: it should jump back straight away. The bridge stays connected (green swords). A drag between two creatures with the *same* initiative may jump back: the webapp decides ties.
 - [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
 - [ ] J4. Turn wifi on. Change another monster's HP in IT. Both HP changes should now show in the webapp.
 
-If J1 fails: send the report note. If J2-J4 fail: the `[Bridge]` console lines.
+If J3-J4 fail: the `[Bridge]` console lines.

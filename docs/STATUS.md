@@ -25,5 +25,5 @@ Start here. Current state and open work only. Last update: 21-10-2026.
 
 Ideas parked during a session, one dated line each.
 
-- 21-10-2026: A monster dragged in IT stays exactly where dropped: after a drag, write the webapp's `tieBreaker` to match IT's order within the tie.
+- 21-10-2026 (expanded 22-10-2026): DM tie order. A creature dragged in IT stays exactly where dropped, players too, and the webapp remembers it when a new combatant joins the tie. Needs: bridge writes `tieBreaker` for the tie group after a drag; webapp sort lets a DM-set order beat modifier, DEX and players-first (sort lives in both repos, turn is an index: change together, webapp deploy + plugin release). Same job: monsters and players added from IT get no `dexterity_score` (IT only keeps the modifier; harmless, modifier mostly follows DEX).
 - 21-10-2026: Small: warn when IT sorts ascending; drop the old version headers in the source files (done for the manager); split `main.ts` (1100+ lines, unrelated features).
