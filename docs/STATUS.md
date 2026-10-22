@@ -11,7 +11,7 @@ Start here. Current state and open work only. Last update: 22-10-2026.
 - **Hand tests passed 21-10-2026:** sittings B (restart, IT's buttons), C (DM's PC) and E (pane button). Sittings F and G (new encounter removes the players, creates a tracker by itself) passed too. Sittings H and I passed. Webapp quick checks (D) dropped. No hand tests open.
 - **In 0.6.0:** bridge button in IT's own icon row (works in the sidebar) (red/green swords; click = connect, reconnect or status), one-click reconnect to the last tracker within 12 hours, a redesigned connect window (one list: new tracker or an existing one, newest first, button says what happens; the new tracker's name is an empty field with the date and time as grey placeholder), and "New encounter" while connected removes IT's kept players and connects straight to a new empty webapp tracker (the DM adds the party in the webapp, the bridge brings it to IT). A player character removed in IT by accident is added back from the webapp, with a message. Hand-tested and passed (sitting I).
 - **In 0.7.0 (sync reliability):** IT saves are handled once IT is quiet (300 ms), one at a time. Bridge writes are patches in a Firestore transaction, so webapp changes made meanwhile are kept. The 2-second echo windows are gone: echoes are recognised instead. IT's drag-and-drop fires no save event, so the bridge also watches IT's store. Self-test R1-R6.
-- **Next:** Tim reports webapp sitting I. Then pick from the Inbox; the DM tie order is the top candidate.
+- **Next:** pick from the Inbox; the DM tie order is the top candidate.
 
 ## Known issues
 
