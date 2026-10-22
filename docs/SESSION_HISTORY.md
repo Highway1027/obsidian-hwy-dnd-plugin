@@ -2,6 +2,12 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 22-10-2026 - Sitting J1-J2, Show HP in the webapp
+
+- J1 and J2 passed on 0.7.0. Edge case: very fast drags can still break sync. Feedback: a DM drag inside a tie should win and be remembered; parked in the Inbox (needs the webapp sort to change too). Monsters from IT carry no DEX (IT keeps only the modifier); harmless.
+- TESTING.md rule: "Before you start" only holds Tim's own checks; agent steps (`npm run vault`) never appear there. Wrap-up skill updated to match.
+- Webapp: the sort debugger got a "Show HP" switch (off on every open) so J4 can be checked. Released; the first deploy failed on firebase-tools 15.34.1 (403 on serviceusage). Pinned, then Tim gave the GitHub deploy account "Service Usage Consumer" and the pin was removed (main e36c671).
+
 ## 21-10-2026 - Drag fix, release 0.7.0
 
 - Sitting J1 (self-test on the 16:44 build): 23 passed, A5 skipped (Tim deleted his test character to test the webapp's new delete). J2 failed: Ogg dragged from 4 to 20 in IT stayed unseen until the next turn, then went back to 4.

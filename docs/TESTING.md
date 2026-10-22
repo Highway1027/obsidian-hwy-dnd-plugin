@@ -1,8 +1,8 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing. 0.7.0 is released; sitting J checks it.
+**Blocking right now:** nothing. J3-J4 (offline) are the last open checks of 0.7.0.
 
-Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 21-10-2026.
+Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 22-10-2026.
 
 How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet points, not novels"):
 - One action per line, then what you should see. One short sentence each.
