@@ -1,6 +1,6 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing. J3-J4 (offline) are the last open checks of 0.7.0.
+**Blocking right now:** nothing. No hand tests open.
 
 Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 22-10-2026.
 
@@ -33,18 +33,4 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sitting D (webapp crash checks from 27-09-2026) dropped: no such crashes seen since.
 - 21-10-2026: sitting J on the 16:44 build: self-test 23 passed, A5 skipped (test character deleted). J2 failed: a drag in IT was only seen at the next turn. Fixed in 0.7.0 (bridge watches IT's store); J redone below.
 - 22-10-2026: J1 and J2 passed on 0.7.0. Edge case: very fast drags one after another can still break sync. Feedback: a DM drag inside a tie the webapp already resolved should be kept and remembered, also when a new combatant with that initiative joins.
-
----
-
-## Sitting J - Sync reliability, 0.7.0 (about 10 minutes)
-
-**Before you start**
-- Obsidian → Settings → Community plugins shows Highway DnD Tools **0.7.0**. If not: BRAT → update the plugin, then restart Obsidian.
-- Plugin settings: self-test campaign is the "TEST - Arc van Noah" copy.
-- Initiative Tracker view is open.
-
-**Steps**
-- [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
-- [ ] J4. Turn wifi on. Change another monster's HP in IT. Webapp tracker → settings (gear) → sort debugger → turn "Show HP" on. Both monsters should show their new HP.
-
-If J3-J4 fail: the `[Bridge]` console lines.
+- 22-10-2026: J3 and J4 passed (offline notice, HP sent again after wifi back). Sitting J and 0.7.0 done.
