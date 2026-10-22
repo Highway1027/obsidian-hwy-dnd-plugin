@@ -45,6 +45,6 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 **Steps**
 - [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
-- [ ] J4. Turn wifi on. Change another monster's HP in IT. Both HP changes should now be saved. Webapp tracker → settings (gear) → sort debugger → "Show HP" on: both monsters show the new HP (needs the webapp release with "Show HP"). Before that release: check in the Firebase console (project wildshape-tracker) → Firestore → `caravans` → the TEST campaign → `initiativeTrackers` → the tracker → `combatants`: both monsters show the new `hp`.
+- [ ] J4. Turn wifi on. Change another monster's HP in IT. Webapp tracker → settings (gear) → sort debugger → turn "Show HP" on. Both monsters should show their new HP.
 
 If J3-J4 fail: the `[Bridge]` console lines.
