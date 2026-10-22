@@ -2,6 +2,12 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 22-10-2026 - Sitting J done, no hand tests open
+
+- J3-J4 (offline notice, HP sent again after wifi is back) passed: sitting J and 0.7.0 are fully hand-tested. No plugin hand tests open.
+- Webapp sitting I (Show HP in the sort debugger) passed too, marked in `wildshape-tracker`. Webapp sitting C (council rerun) is still open; it doesn't concern the plugin.
+- Next: DM tie order (top of the Inbox), cross-repo, plan first.
+
 ## 22-10-2026 - Sitting J1-J2, Show HP in the webapp
 
 - J1 and J2 passed on 0.7.0. Edge case: very fast drags can still break sync. Feedback: a DM drag inside a tie should win and be remembered; parked in the Inbox (needs the webapp sort to change too). Monsters from IT carry no DEX (IT keeps only the modifier); harmless.
