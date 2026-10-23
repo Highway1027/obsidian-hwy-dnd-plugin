@@ -106,9 +106,10 @@ export function trackerFingerprint(combatants: WebappCombatant[] | undefined, tu
 /**
  * Apply a patch to the newest combatant list. Fields are only set where they differ, new
  * combatants are only added once, and sortIndex is set the way the webapp does when anything
- * changed. The turn is worked out on the final list.
+ * changed. The turn is worked out on the final list: `turnTo` when given, else the turn stays
+ * with the combatant who had it (`currentTurn`) when the order changed around them.
  */
-export function applyPatch(current: WebappCombatant[], patch: TrackerPatch): PatchResult {
+export function applyPatch(current: WebappCombatant[], patch: TrackerPatch, currentTurn?: number): PatchResult {
     const list = current.map(c => ({ ...c }));
     let changed = false;
 
@@ -134,6 +135,10 @@ export function applyPatch(current: WebappCombatant[], patch: TrackerPatch): Pat
     if (patch.turnTo) {
         const index = webappOrder(combatants).findIndex(c => c.id === patch.turnTo);
         if (index >= 0) turn = index;
+    } else if (changed && typeof currentTurn === 'number') {
+        const holder = webappOrder(current)[currentTurn];
+        const index = holder ? webappOrder(combatants).findIndex(c => holder.id ? c.id === holder.id : c.name === holder.name) : -1;
+        if (index >= 0 && index !== currentTurn) turn = index;
     }
     return { combatants, turn, changed };
 }
