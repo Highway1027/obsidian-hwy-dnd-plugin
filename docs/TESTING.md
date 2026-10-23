@@ -1,6 +1,6 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing. Sitting K waits for the webapp deploy and plugin release of the DM tie order.
+**Blocking right now:** nothing. Sitting K is ready (0.8.0 released, webapp live 23-10-2026).
 
 Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 23-10-2026.
 
@@ -23,7 +23,7 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 
 Before you start:
 - Community plugins shows Highway DnD Tools 0.8.0. If not: BRAT → update, restart Obsidian.
-- IT connected to a webapp tracker with 2 players and 3 monsters, initiatives rolled.
+- IT connected to a webapp tracker in a TEST campaign (not Ark van Noah) with 2 players and 3 monsters, initiatives rolled.
 
 Steps:
 - [ ] K1 Obsidian: Ctrl+P → "Run bridge self-test (test campaign)". All steps pass (R5-R7 are new).

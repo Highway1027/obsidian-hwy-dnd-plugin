@@ -2,6 +2,11 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 23-10-2026 - DM tie order released (0.8.0)
+
+- Webapp: lint, 321 unit + 112 function tests, build passed; develop merged to main (`f8eeaa2`), Hosting deploy green, live bundle contains "DM Order" and `tieOrder`. No rules or functions deployed.
+- Plugin: 85 tests + build passed, `npm version minor` → 0.8.0, main `848498f`, GitHub release has main.js, manifest.json, styles.css. Sitting K handed to Tim.
+
 ## 23-10-2026 - DM tie order (built, not released)
 
 - A drag in IT keeps creatures where dropped, players too. New webapp field `tieOrder` {init, rank} instead of reusing `tieBreaker` (a random d20 everyone has; moving it up would break the modifier rule). Valid only while `init` matches, so initiative edits clear it by themselves.
