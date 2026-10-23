@@ -1,5 +1,5 @@
 // src/bridge/itPluginAccess.ts
-// v9 - 27-09-2026 - Creatures found by IT id first (then name); statuses use IT's Set of conditions; unused order helper removed
+// All access to the Initiative Tracker plugin's internals (Svelte stores). Creatures are found by IT id first, then name.
 
 import { App } from 'obsidian';
 
@@ -87,6 +87,11 @@ export class ITPluginAccess {
 
     private getPlugin(): any | null {
         return this.getAPI()?.plugin ?? null;
+    }
+
+    /** Does IT sort low initiative first? (IT setting "descending" off.) The bridge assumes high first. */
+    sortsAscending(): boolean {
+        return this.getPlugin()?.data?.descending === false;
     }
 
     private getTrackerStore(): any | null {

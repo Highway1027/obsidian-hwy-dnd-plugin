@@ -17,7 +17,7 @@ Obsidian plugin (id `highway-dnd-tools`) for the DM of Tim's D&D group. Main fea
 | `src/bridge/InitiativeBridgeManager.ts` | Two-way sync logic (connect, relink, echo suppression, new-encounter and tracker-close detection) |
 | `src/bridge/itPluginAccess.ts` | Access to IT's Svelte stores; creatures addressed by IT id |
 | `src/bridge/linking.ts` | Pure matching of IT creatures ↔ webapp combatants ↔ campaign PCs, first names for PCs in IT (tested) |
-| `src/bridge/ordering.ts` | Pure turn order: copy of the webapp sort, real initiative + `manualOrder` for IT (tested) |
+| `src/bridge/ordering.ts` | Pure turn order: copy of the webapp sort (with the DM tie order `tieOrder`), real initiative + `manualOrder` for IT, `planTieOrder` after a drag in IT (tested) |
 | `src/bridge/removal.ts` | Pure rule: monsters removed in IT become dead in the webapp (tested) |
 | `src/bridge/fieldMapping.ts` | Stat translation between IT and the webapp |
 | `src/bridge/patch.ts` | Pure: bridge writes as patches applied to the newest tracker in a transaction; echo fingerprint (tested) |

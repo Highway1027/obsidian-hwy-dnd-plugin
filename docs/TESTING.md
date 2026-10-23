@@ -1,8 +1,8 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing. No hand tests open.
+**Blocking right now:** nothing. Sitting K waits for the webapp deploy and plugin release of the DM tie order.
 
-Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 22-10-2026.
+Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 23-10-2026.
 
 How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet points, not novels"):
 - One action per line, then what you should see. One short sentence each.
@@ -18,6 +18,21 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - When a release passes, remove its steps and add one dated line under Results.
 
 **If something goes wrong:** open Obsidian's console (Ctrl+Shift+I) and copy the lines starting with `[Bridge]`.
+
+## Sitting K: DM tie order (about 10 min)
+
+Before you start:
+- Community plugins shows Highway DnD Tools 0.8.0. If not: BRAT → update, restart Obsidian.
+- IT connected to a webapp tracker with 2 players and 3 monsters, initiatives rolled.
+
+Steps:
+- [ ] K1 Obsidian: Ctrl+P → "Run bridge self-test (test campaign)". All steps pass (R5-R7 are new).
+- [ ] K2 IT: type a monster's initiative equal to a player's. Drag the monster above the player. Webapp: monster above the player, and it stays.
+- [ ] K3 IT: drag a player between two monsters with another initiative. Webapp: the player is there, with the initiative IT shows.
+- [ ] K4 Webapp: add a monster with the K2 initiative. Both sides: it goes below the tie you made.
+- [ ] K5 Start combat. IT: drag a creature from below the active one to above it. Both sides: the turn stays on the same creature.
+- [ ] K6 Webapp only: in a tie group, drag to reorder, click Accept. Reload the page: your order holds.
+- [ ] K7 Webapp: gear → sort debugger. The "DM Order" column shows 1, 2 ... for the ordered ties.
 
 ## Results so far
 

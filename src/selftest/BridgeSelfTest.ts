@@ -235,25 +235,54 @@ export class BridgeSelfTest {
             if (writes > 2) throw new Error(`the bridge wrote the tracker ${writes} times for one burst (expected 1 or 2)`);
         });
 
-        await this.step('R5', 'A monster dragged to the top in IT reaches the webapp without another change', async () => {
+        await this.step('R5', 'A monster dragged to the top in IT stays on top in the webapp, without another change', async () => {
             const top = this.it.getOrderedCreatures()[0];
             if (!top || top.id === this.ids.bugbear) throw new Error('Bugbear is already at the top of IT');
             const target = top.initiative;
             if (!this.it.dragCreature(this.ids.bugbear, 0)) throw new Error('could not drag in IT');
             await this.waitFor(async () => {
-                const bugbear = (await this.combatants()).find(c => c.obsidianId === this.ids.bugbear);
-                return bugbear?.initiative === target ? null : `webapp Bugbear initiative is ${bugbear?.initiative}, expected ${target}`;
+                const list = await this.combatants();
+                const bugbear = list.find(c => c.obsidianId === this.ids.bugbear);
+                if (bugbear?.initiative !== target) return `webapp Bugbear initiative is ${bugbear?.initiative}, expected ${target}`;
+                const first = webappOrder(list)[0];
+                if (first?.obsidianId !== this.ids.bugbear) return `webapp starts with "${first?.name}", not the Bugbear`;
+                return this.orderProblem();
             });
         });
 
-        await this.step('R6', 'A player dragged in IT jumps back to the webapp value without another change', async () => {
+        await this.step('R6', 'A player dragged to the bottom in IT stays there in the webapp, with the initiative IT gave', async () => {
             if (!pc) throw new SkipStep('the test campaign has no player characters');
-            const webappValue = (await this.combatants()).find(c => c.pcId === pc.characterId)?.initiative;
             const ordered = this.it.getOrderedCreatures();
+            const last = ordered[ordered.length - 1];
+            if (!last || last.id === this.ids.pc) throw new Error(`${pc.name} is already at the bottom of IT`);
+            const target = last.initiative;
             if (!this.it.dragCreature(this.ids.pc, ordered.length - 1)) throw new Error('could not drag in IT');
             await this.waitFor(async () => {
-                const now = this.itById(this.ids.pc)?.initiative;
-                if (now !== webappValue) return `IT shows ${now}, webapp has ${webappValue}`;
+                const list = await this.combatants();
+                const player = list.find(c => c.pcId === pc.characterId);
+                if (player?.initiative !== target) return `webapp ${pc.name} initiative is ${player?.initiative}, expected ${target}`;
+                const bottom = webappOrder(list)[list.length - 1];
+                if (bottom?.pcId !== pc.characterId) return `webapp ends with "${bottom?.name}", not ${pc.name}`;
+                return this.orderProblem();
+            });
+        });
+
+        await this.step('R7', 'A newcomer to a tie the DM ordered goes after it, even with a higher modifier', async () => {
+            if (!pc) throw new SkipStep('the test campaign has no player characters');
+            const list = await this.combatants();
+            const player = list.find(c => c.pcId === pc.characterId)!;
+            if (!player.tieOrder) throw new Error(`${pc.name} has no DM order after the drag`);
+            const newcomer: WebappCombatant = {
+                id: `selftest_tie_${Date.now()}`, name: 'Tie Wolf', type: 'Monster', initiative: player.initiative,
+                initiative_modifier: 5, dexterity_score: 20, hp: 11, maxHp: 11, ac: 13, isDead: false,
+                isHiddenFromPlayers: false, tieBreaker: 20,
+            };
+            await this.webappWrite(withSortIndex([...list, newcomer]));
+            await this.waitFor(async () => {
+                const now = webappOrder(await this.combatants());
+                const at = (id: string | undefined) => now.findIndex(c => c.id === id);
+                if (at(newcomer.id) !== at(player.id) + 1) return `webapp order: ${now.map(c => c.name).join(', ')}`;
+                if (!this.it.getOrderedCreatures().some((c: any) => itName(c) === 'Tie Wolf')) return 'Tie Wolf is not in IT yet';
                 return this.orderProblem();
             });
         });

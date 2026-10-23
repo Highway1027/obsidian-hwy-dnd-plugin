@@ -8,7 +8,7 @@ import {
     planLinks, matchCaravanPc, buildPcCombatant, findCreatureFor, itNameFor, realInitiative,
     type CaravanPc, type ItCreatureRef
 } from './linking';
-import { planItOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
+import { planItOrder, planTieOrder, webappOrder, withSortIndex, type OrderedCreatureRef } from './ordering';
 import { markRemovedMonstersDead, playersToRestore, type RemovedCreature } from './removal';
 import type { TrackerSummary } from './connectChoices';
 import { QuietRunner } from './quietRunner';
@@ -343,6 +343,10 @@ export class InitiativeBridgeManager {
 
         // 2. Start IT plugin event listeners
         this.startITListeners();
+
+        if (this.itAccess.sortsAscending()) {
+            new Notice('⚠️ Initiative Tracker sorts low initiative first. The bridge expects high first, so the turn order will be reversed. Choose "Sort Descending" in the Initiative Tracker menu.', 12000);
+        }
 
         console.log(`[Bridge] Connected: ${caravanId}/${trackerId}`);
     }
@@ -871,7 +875,7 @@ export class InitiativeBridgeManager {
                 const snap = await transaction.get(trackerRef);
                 if (!snap.exists()) throw new Error('Tracker not found');
                 const data = snap.data();
-                const result = applyPatch(data.combatants || [], patch);
+                const result = applyPatch(data.combatants || [], patch, data.turn);
                 const update: Record<string, unknown> = {};
                 if (result.changed) update.combatants = result.combatants;
                 if (result.turn !== null && result.turn !== data.turn) update.turn = result.turn;
@@ -1124,6 +1128,13 @@ export class InitiativeBridgeManager {
         let initiativeChanged = false;
         let playerInitiativeEdited = false;
         let activeId: string | null = null;   // webapp id of the combatant whose turn IT just started
+        const movedByDrag: WebappCombatant[] = [];
+
+        // A drag in IT changes manualOrder; the bridge's own manualOrder changes are in the snapshot.
+        const dragged = liveCreatures.some((c: any) => {
+            const prev = this.lastITCreatureMap.get(c.id);
+            return prev !== undefined && (typeof c.manualOrder === 'number' ? c.manualOrder : null) !== prev.order;
+        });
 
         // --- Detect changes per creature ---
         for (const c of liveCreatures) {
@@ -1166,12 +1177,14 @@ export class InitiativeBridgeManager {
 
             // Initiative edited in IT: monsters sync to the webapp (IT is their source, like HP);
             // players' initiative belongs to the webapp, so their IT value is put back below.
+            // A drag is the DM's choice, so a dragged player keeps the initiative IT gave them.
             const itInit = realInitiative(c.initiative);
             if (c.initiative !== prev.initiative && itInit !== null && itInit !== firestoreCombatant.initiative) {
-                if (c.player) {
+                if (c.player && !dragged) {
                     playerInitiativeEdited = true;
                 } else {
                     firestoreCombatant.initiative = itInit;
+                    if (dragged) movedByDrag.push(firestoreCombatant);
                     initiativeChanged = true;
                     needsFullCombatantUpdate = true;
                 }
@@ -1180,6 +1193,23 @@ export class InitiativeBridgeManager {
             // Turn changed (active creature); the index is worked out on the final list below.
             if (c.active && !prev.active) {
                 activeId = firestoreCombatant.id ?? null;
+            }
+        }
+
+        // --- DM order after a drag: every tie keeps the order IT shows (ordering.planTieOrder) ---
+        if (dragged) {
+            const used = new Set<number>();
+            const itOrder = liveCreatures.map((c: any) => {
+                const fc = firestoreByObsId.get(c.id) || firestoreByName.get(getCreatureDisplayName(c));
+                const index = fc ? currentFirestoreCombatants.indexOf(fc) : -1;
+                if (index < 0 || used.has(index)) return null;
+                used.add(index);
+                return index;
+            });
+            const moved = movedByDrag.map(c => currentFirestoreCombatants.indexOf(c));
+            for (const { index, tieOrder } of planTieOrder(currentFirestoreCombatants, itOrder, moved)) {
+                currentFirestoreCombatants[index].tieOrder = tieOrder;
+                needsFullCombatantUpdate = true;
             }
         }
 
@@ -1220,8 +1250,8 @@ export class InitiativeBridgeManager {
             return;
         }
 
-        // New tie order after a monster's initiative edit; a player's edit is put back.
-        if (initiativeChanged || playerInitiativeEdited || newCombatants.length > 0) {
+        // New tie order after a monster's initiative edit or a drag; a player's typed edit is put back.
+        if (initiativeChanged || playerInitiativeEdited || dragged || newCombatants.length > 0) {
             this.enforceInitiativeOrder(finalCombatants);
         }
     }
