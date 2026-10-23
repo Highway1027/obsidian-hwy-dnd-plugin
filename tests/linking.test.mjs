@@ -129,3 +129,13 @@ describe('name matching safety', () => {
         assert.deepEqual(plan.unlinkedPlayers, ['Ayla']);
     });
 });
+
+describe('DEX score for creatures added from IT', () => {
+    it('fits the initiative modifier, so the webapp DEX step stays fair', () => {
+        assert.equal(L.dexScoreFor(0), 10);
+        assert.equal(L.dexScoreFor(3), 16);
+        assert.equal(L.dexScoreFor(-1), 8);
+        const pc = L.buildPcCombatant({ characterId: 'c1', name: 'Ayla Stone' }, { id: 'it1', name: 'Ayla', initiative: 12, modifier: 2 });
+        assert.equal(pc.dexterity_score, 14);
+    });
+});

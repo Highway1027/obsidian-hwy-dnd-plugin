@@ -1,8 +1,8 @@
 # Testing (Obsidian plugin)
 
-**Blocking right now:** nothing for development. Release 0.7.0 waits for sitting J.
+**Blocking right now:** nothing. Sitting K waits for the webapp deploy and plugin release of the DM tie order.
 
-Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 21-10-2026.
+Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 23-10-2026.
 
 How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet points, not novels"):
 - One action per line, then what you should see. One short sentence each.
@@ -11,10 +11,28 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - **A step you don't mention counts as passed.**
 - What the sitting needs (plugin version, IT version, a tracker with players and monsters) goes in "Before you start".
 - **Self-test first**: what the bridge does with IT and the webapp gets a step in the self-test (`src/selftest/BridgeSelfTest.ts`, step ids like the sittings). Hand sittings only hold what it can't check: an Obsidian restart, IT's own buttons and panes, the webapp's look, the DM's PC. Pure rules belong in `tests/` (`npm test`). Mark a step *assumed* when an earlier result covers it.
-- **Before you start** names the build to test: "the build of DD-MM-YYYY HH:MM is in the vault (`npm run vault`); reload the plugin", or "update to <version> via BRAT". The agent runs `npm run vault` itself before handing over a sitting.
+- **Before you start** holds only what Tim checks or does, plus how to check he has the right build (Tim, 22-10-2026: keep agent reminders out of it):
+  - Release: "Community plugins shows Highway DnD Tools <version>. If not: BRAT → update, restart Obsidian."
+  - Unreleased build: "Community plugins shows <version>; restart Obsidian (or turn the plugin off and on) to load the build of DD-MM-YYYY HH:MM."
+  - Agent steps (`npm run vault`, deploys) are done before the sitting is handed over and never appear in it. If one could not be done, the sitting says what Tim must do instead.
 - When a release passes, remove its steps and add one dated line under Results.
 
 **If something goes wrong:** open Obsidian's console (Ctrl+Shift+I) and copy the lines starting with `[Bridge]`.
+
+## Sitting K: DM tie order (about 10 min)
+
+Before you start:
+- Community plugins shows Highway DnD Tools 0.8.0. If not: BRAT → update, restart Obsidian.
+- IT connected to a webapp tracker with 2 players and 3 monsters, initiatives rolled.
+
+Steps:
+- [ ] K1 Obsidian: Ctrl+P → "Run bridge self-test (test campaign)". All steps pass (R5-R7 are new).
+- [ ] K2 IT: type a monster's initiative equal to a player's. Drag the monster above the player. Webapp: monster above the player, and it stays.
+- [ ] K3 IT: drag a player between two monsters with another initiative. Webapp: the player is there, with the initiative IT shows.
+- [ ] K4 Webapp: add a monster with the K2 initiative. Both sides: it goes below the tie you made.
+- [ ] K5 Start combat. IT: drag a creature from below the active one to above it. Both sides: the turn stays on the same creature.
+- [ ] K6 Webapp only: in a tie group, drag to reorder, click Accept. Reload the page: your order holds.
+- [ ] K7 Webapp: gear → sort debugger. The "DM Order" column shows 1, 2 ... for the ordered ties.
 
 ## Results so far
 
@@ -28,20 +46,6 @@ How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet 
 - 21-10-2026: sitting H passed. Feedback: the player added back had no HP in IT. Fixed (sitting I).
 - 21-10-2026: sitting I passed (0.6.0: a player added back keeps HP, max HP and AC).
 - 21-10-2026: sitting D (webapp crash checks from 27-09-2026) dropped: no such crashes seen since.
-
----
-
-## Sitting J - Sync reliability (about 10 minutes)
-
-**Before you start**
-- The build of 21-10-2026 18:52 is in the vault (`npm run vault`, still says 0.6.0). Reload the plugin.
-- 21-10-2026 16:44 build: J1 passed (23, A5 skipped: test character deleted). J2 failed: a drag in IT was only seen at the next turn, then Ogg jumped back from 20 to 4. Fixed: the bridge now also watches IT's store (IT's drop fires no save event). New self-test steps R5, R6.
-- Self-test campaign set in the plugin settings (the "TEST - Arc van Noah" copy). Initiative Tracker view open.
-
-**Steps**
-- [ ] J1. Ctrl+P → "Run bridge self-test (test campaign)" → Start. Leave Obsidian alone. The report note should say all 26 steps passed (A5 skips without a character of yours). R5-R6 are new: drags in IT.
-- [ ] J2. Connect to a tracker in the TEST campaign with a few monsters. Drag a monster to another place in IT. Within a second the webapp should show its new initiative; don't touch anything else. Drag a player: it should jump back straight away. The bridge stays connected (green swords). A drag between two creatures with the *same* initiative may jump back: the webapp decides ties.
-- [ ] J3. Turn wifi off. Change a monster's HP in IT. A notice should say the bridge could not save to the webapp.
-- [ ] J4. Turn wifi on. Change another monster's HP in IT. Both HP changes should now show in the webapp.
-
-If J1 fails: send the report note. If J2-J4 fail: the `[Bridge]` console lines.
+- 21-10-2026: sitting J on the 16:44 build: self-test 23 passed, A5 skipped (test character deleted). J2 failed: a drag in IT was only seen at the next turn. Fixed in 0.7.0 (bridge watches IT's store); J redone below.
+- 22-10-2026: J1 and J2 passed on 0.7.0. Edge case: very fast drags one after another can still break sync. Feedback: a DM drag inside a tie the webapp already resolved should be kept and remembered, also when a new combatant with that initiative joins.
+- 22-10-2026: J3 and J4 passed (offline notice, HP sent again after wifi back). Sitting J and 0.7.0 done.

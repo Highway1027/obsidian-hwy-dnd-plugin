@@ -1,5 +1,4 @@
 // main.ts
-// v11 - 27-09-2026 - Help tips for reconnecting next session, new encounters and player name linking
 import { App, Notice, Plugin, PluginSettingTab, Setting, Modal, MarkdownView, requestUrl } from 'obsidian';
 import { InitiativeBridgeManager } from './src/bridge/InitiativeBridgeManager';
 import { ShareInitiativeModal } from './src/bridge/ShareInitiativeModal';
@@ -1110,7 +1109,7 @@ class HwysDnDToolsSettingTab extends PluginSettingTab {
             containerEl.createEl('h4', { text: '⚠️ Known Edge Cases', attr: { style: 'margin-top: 16px;' } });
             const edgeList = containerEl.createEl('ul');
             const edgeItems = [
-                ['Drag-and-Drop Reorder', 'Reordering creatures by dragging in the IT plugin may trigger rapid state changes that break sync. Change initiative values directly instead.'],
+                ['Drag-and-Drop Reorder', 'A creature dragged in IT (players too) stays where you drop it: it takes the initiative of its neighbour and the webapp remembers your order for that tie. A newcomer to the tie goes after it. Very fast drags one after another can still break sync.'],
                 ['Renaming Combatants', 'If a combatant is renamed in the webapp after being synced, matching may fail. The bridge assigns stable IDs (obsidianId) to prevent this, but timing edges exist.'],
                 ['Monster Visibility', 'Monsters are marked as hidden until their turn but the DM always sees them. A "player mode" toggle is planned but not yet implemented.'],
                 ['PC Death Saves', 'PCs at 0 HP stay in initiative order for death saving throws. They are only removed when manually moved to the graveyard in the webapp.'],

@@ -1,5 +1,5 @@
 // src/bridge/BridgeStatusView.ts
-// v1 - 26-02-2026 - Bridge status sidebar panel
+// Bridge status sidebar panel.
 
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { InitiativeBridgeManager } from './InitiativeBridgeManager';

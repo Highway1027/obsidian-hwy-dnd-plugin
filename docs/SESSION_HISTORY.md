@@ -2,6 +2,32 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 23-10-2026 - DM tie order (built, not released)
+
+- A drag in IT keeps creatures where dropped, players too. New webapp field `tieOrder` {init, rank} instead of reusing `tieBreaker` (a random d20 everyone has; moving it up would break the modifier rule). Valid only while `init` matches, so initiative edits clear it by themselves.
+- Tim's choices: a dragged player keeps IT's initiative (typed edits still jump back); a newcomer to an ordered tie goes last; the webapp's own tie tool writes `tieOrder` too.
+- A drag is recognised by `manualOrder` changing (now in the IT snapshot). `applyPatch` keeps the turn on the same combatant when the order changes.
+- Gotchas: the webapp tie tool only shows for exact player-vs-player ties; its "Accept All" used to flip the order. Several plugin files are CRLF, others LF.
+- Also: DEX score for creatures from IT, ascending-sort warning, version headers dropped. 85 plugin tests, webapp 321 + e2e TO1 pass. Merged to develop in both repos; release order webapp first, then plugin 0.8.0.
+
+## 22-10-2026 - Sitting J done, no hand tests open
+
+- J3-J4 (offline notice, HP sent again after wifi is back) passed: sitting J and 0.7.0 are fully hand-tested. No plugin hand tests open.
+- Webapp sitting I (Show HP in the sort debugger) passed too, marked in `wildshape-tracker`. Webapp sitting C (council rerun) is still open; it doesn't concern the plugin.
+- Next: DM tie order (top of the Inbox), cross-repo, plan first.
+
+## 22-10-2026 - Sitting J1-J2, Show HP in the webapp
+
+- J1 and J2 passed on 0.7.0. Edge case: very fast drags can still break sync. Feedback: a DM drag inside a tie should win and be remembered; parked in the Inbox (needs the webapp sort to change too). Monsters from IT carry no DEX (IT keeps only the modifier); harmless.
+- TESTING.md rule: "Before you start" only holds Tim's own checks; agent steps (`npm run vault`) never appear there. Wrap-up skill updated to match.
+- Webapp: the sort debugger got a "Show HP" switch (off on every open) so J4 can be checked. Released; the first deploy failed on firebase-tools 15.34.1 (403 on serviceusage). Pinned, then Tim gave the GitHub deploy account "Service Usage Consumer" and the pin was removed (main e36c671).
+
+## 21-10-2026 - Drag fix, release 0.7.0
+
+- Sitting J1 (self-test on the 16:44 build): 23 passed, A5 skipped (Tim deleted his test character to test the webapp's new delete). J2 failed: Ogg dragged from 4 to 20 in IT stayed unseen until the next turn, then went back to 4.
+- Cause: IT 13.0.18's drop handler sets the tracker store directly (`store.set`) and fires no `initiative-tracker:save-state`. Fix: `itAccess.onStoreChange` subscribes to the store and schedules the same quiet run. Self-test R5/R6 drag via `dragCreature`, a copy of IT's drop handler.
+- Released 0.7.0 at Tim's request before J2-J4 ran on the new build (still open in sitting J). 72 tests and build passed.
+
 ## 21-10-2026 - Sync reliability (develop, not released)
 
 - Tim approved the three parts, built in the order 2, 3, 1 (one commit each). (2) `quietRunner.ts`: IT saves handled after 300 ms of quiet, never two runs at once. (3) `patch.ts`: every bridge write is a field patch applied to the newest tracker in a transaction, via `commitPatch` (link pass too). The webapp already used transactions, so no rules change.

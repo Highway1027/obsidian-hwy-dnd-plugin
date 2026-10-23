@@ -24,7 +24,11 @@ const snap = (list) => S.takeSnapshot(list, c => c.name);
 describe('takeSnapshot', () => {
     it('reads the fields the bridge compares', () => {
         const s = snap([creature('a', 'Goblin 1', { player: undefined, hp: undefined })]);
-        assert.deepEqual(s.get('a'), { name: 'Goblin 1', hp: 0, initiative: 10, hidden: false, active: false, player: false });
+        assert.deepEqual(s.get('a'), { name: 'Goblin 1', hp: 0, initiative: 10, hidden: false, active: false, player: false, order: null });
+    });
+
+    it('remembers manualOrder, so a drag in IT shows as a change', () => {
+        assert.equal(snap([creature('a', 'Goblin', { manualOrder: 2 })]).get('a').order, 2);
     });
 });
 
@@ -51,6 +55,15 @@ describe('foldOwnChanges', () => {
         const after = snap([creature('a', 'Goblin'), creature('d', 'Wolf', { initiative: 3 })]);
         S.foldOwnChanges(snapshot, before, after);
         assert.equal(snapshot.has('d'), false, 'still new, so it is sent to the webapp');
+    });
+
+    it('knows the manualOrder the bridge set, so it is not taken for a drag', () => {
+        const snapshot = snap([creature('a', 'Goblin', { manualOrder: 0 })]);
+        const live = creature('a', 'Goblin', { manualOrder: 0 });
+        const before = snap([live]);
+        live.manualOrder = 3;                                          // bridge applies the webapp order
+        S.foldOwnChanges(snapshot, before, snap([live]));
+        assert.equal(snapshot.get('a').order, 3);
     });
 
     it('changes nothing when the bridge changed nothing', () => {

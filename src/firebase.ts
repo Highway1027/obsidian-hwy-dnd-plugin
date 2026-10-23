@@ -1,5 +1,5 @@
 // src/firebase.ts
-// v1 - 25-02-2026 - Firebase SDK integration for Initiative Bridge
+// Firebase SDK connection to the webapp backend.
 
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signOut as firebaseSignOut, Auth, User } from 'firebase/auth';

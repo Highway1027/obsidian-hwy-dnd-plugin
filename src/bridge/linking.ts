@@ -1,5 +1,5 @@
 // src/bridge/linking.ts
-// v1 - 27-09-2026 - Pure matching between IT creatures, webapp combatants and caravan player characters
+// Pure matching between IT creatures, webapp combatants and caravan player characters.
 
 import type { WebappCombatant } from './fieldMapping';
 
@@ -124,6 +124,14 @@ export function findCreatureFor<T extends ItCreatureRef>(combatant: WebappCombat
     return uniqueFirstWord<T>(creatures.filter(c => c.player), namesOf, combatant.name);
 }
 
+/**
+ * IT only keeps the initiative modifier, not DEX. The webapp sorts ties by modifier, then DEX,
+ * so a DEX score that fits the modifier (10 + 2 x modifier) keeps that step fair.
+ */
+export function dexScoreFor(modifier: number): number {
+    return 10 + 2 * modifier;
+}
+
 /** Build a webapp PC combatant the same way the webapp's Add Combatant modal does. */
 export function buildPcCombatant(pc: CaravanPc, creature: ItCreatureRef): WebappCombatant {
     return {
@@ -134,6 +142,7 @@ export function buildPcCombatant(pc: CaravanPc, creature: ItCreatureRef): Webapp
         initiative: realInitiative(creature.initiative),
         isDead: false,
         initiative_modifier: creature.modifier ?? 0,
+        dexterity_score: dexScoreFor(creature.modifier ?? 0),
         tieBreaker: Math.floor(Math.random() * 20) + 1,
         obsidianId: creature.id,
     };

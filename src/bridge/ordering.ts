@@ -1,8 +1,18 @@
 // src/bridge/ordering.ts
 // Pure turn-order logic: the webapp's sort, and how IT gets the same order.
 
-import type { WebappCombatant } from './fieldMapping';
+import type { TieOrder, WebappCombatant } from './fieldMapping';
 import { findCreatureFor, realInitiative, type ItCreatureRef } from './linking';
+
+/**
+ * The DM's place for a combatant inside its initiative tie (0 = first), or null. Same as the
+ * webapp's dmTieRank: `tieOrder` only counts while its `init` is still the combatant's initiative.
+ */
+export function dmTieRank(c: WebappCombatant): number | null {
+    const t = c.tieOrder;
+    if (!t || typeof t.rank !== 'number' || t.init !== c.initiative) return null;
+    return t.rank;
+}
 
 /**
  * Same order as the webapp's getSortedCombatants
@@ -13,6 +23,15 @@ export function sortLikeWebapp<T extends WebappCombatant>(combatants: T[]): T[] 
     return [...combatants].sort((a: any, b: any) => {
         const initDiff = (b.initiative ?? -Infinity) - (a.initiative ?? -Infinity);
         if (initDiff !== 0) return initDiff;
+
+        // DM tie order: ordered combatants before unordered ones (a newcomer goes last), then by rank
+        const rankA = dmTieRank(a);
+        const rankB = dmTieRank(b);
+        if (rankA !== rankB) {
+            if (rankA === null) return 1;
+            if (rankB === null) return -1;
+            return rankA - rankB;
+        }
 
         const modA = a.initiative_modifier ?? 0;
         const modB = b.initiative_modifier ?? 0;
@@ -101,5 +120,47 @@ export function planItOrder(combatants: WebappCombatant[], creatures: OrderedCre
         want(creature, realInitiative(creature.initiative) ?? floor, ordered.length + i);
     });
 
+    return changes;
+}
+
+export interface TieOrderChange {
+    /** Index into the combatant list given to planTieOrder. */
+    index: number;
+    tieOrder: TieOrder;
+}
+
+/**
+ * After a drag in IT: the DM's order for every initiative tie IT shows in another order than
+ * the webapp. `itOrder` holds, in IT's display order, the index of the linked combatant for
+ * each IT creature (null for creatures the webapp doesn't know); `combatants` carry the
+ * initiative they have after the drag. Every member of a reordered tie gets its IT position as
+ * rank, so the order holds when a newcomer joins later. A tie a creature was dragged into
+ * (`moved`: indexes whose initiative the drag changed) is kept too; other ties IT already shows
+ * like the webapp are left alone.
+ */
+export function planTieOrder(combatants: WebappCombatant[], itOrder: (number | null)[], moved: number[] = []): TieOrderChange[] {
+    const groups = new Map<number, number[]>();
+    for (const index of itOrder) {
+        if (index === null) continue;
+        const init = combatants[index]?.initiative;
+        if (typeof init !== 'number') continue;
+        if (!groups.has(init)) groups.set(init, []);
+        groups.get(init)!.push(index);
+    }
+
+    const webappPosition = new Map(sortLikeWebapp(combatants).map((c, i) => [c, i]));
+    const changes: TieOrderChange[] = [];
+    groups.forEach((members, init) => {
+        if (members.length < 2) return;
+        const inWebappOrder = [...members].sort(
+            (a, b) => webappPosition.get(combatants[a])! - webappPosition.get(combatants[b])!);
+        const sameOrder = inWebappOrder.every((index, i) => index === members[i]);
+        if (sameOrder && !members.some(index => moved.includes(index))) return;
+        members.forEach((index, rank) => {
+            const current = combatants[index].tieOrder;
+            if (current?.init === init && current.rank === rank) return;
+            changes.push({ index, tieOrder: { init, rank } });
+        });
+    });
     return changes;
 }

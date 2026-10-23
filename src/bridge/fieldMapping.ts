@@ -1,12 +1,17 @@
 // src/bridge/fieldMapping.ts
-// v2 - 25-02-2026 - Updated to use correct IT plugin CreatureState field names
 
 import type { ITCreatureState } from './itPluginAccess';
-import { realInitiative } from './linking';
+import { dexScoreFor, realInitiative } from './linking';
 
 /**
  * Webapp combatant format (Firestore document fields).
  */
+/** The DM's place in an initiative tie: `rank` 0 goes first, valid while the initiative is `init`. */
+export interface TieOrder {
+    init: number;
+    rank: number;
+}
+
 export interface WebappCombatant {
     id?: string;
     name: string;
@@ -25,6 +30,7 @@ export interface WebappCombatant {
     summonInstanceId?: string;
     conditions?: any[];
     tieBreaker?: number;
+    tieOrder?: TieOrder | null;  // DM's order inside an initiative tie (ordering.dmTieRank)
     initiative_modifier?: number;
     hasAdvantage?: boolean;
     obsidianId?: string;       // IT creature ID for bridge matching
@@ -51,6 +57,8 @@ export function itCreatureToWebappCombatant(creature: ITCreatureState): WebappCo
         type = 'Summon'; // Friendly non-player = ally/summon
     }
 
+    const modifier = Array.isArray(creature.modifier) ? creature.modifier[0] : (creature.modifier ?? 0);
+
     return {
         name: name,
         type: type,
@@ -61,9 +69,8 @@ export function itCreatureToWebappCombatant(creature: ITCreatureState): WebappCo
         ac: typeof creature.ac === 'number' ? creature.ac : parseInt(String(creature.ac)) || 0,
         isDead: (creature.currentHP ?? creature.hp ?? 1) <= 0,
         isHiddenFromPlayers: creature.hidden ?? (!isPlayer), // Monsters default to hidden
-        initiative_modifier: Array.isArray(creature.modifier)
-            ? creature.modifier[0]
-            : (creature.modifier ?? 0),
+        initiative_modifier: modifier,
+        dexterity_score: dexScoreFor(modifier),
     };
 }
 

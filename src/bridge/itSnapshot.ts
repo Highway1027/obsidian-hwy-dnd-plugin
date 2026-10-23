@@ -9,11 +9,13 @@ export interface CreatureSnap {
     hidden: boolean;
     active: boolean;
     player: boolean;
+    /** IT's manualOrder. Only a drag in IT changes it besides the bridge, so a change means a drag. */
+    order: number | null;
 }
 
 export type ItSnapshot = Map<string, CreatureSnap>;
 
-const FIELDS: (keyof CreatureSnap)[] = ['name', 'hp', 'initiative', 'hidden', 'active', 'player'];
+const FIELDS: (keyof CreatureSnap)[] = ['name', 'hp', 'initiative', 'hidden', 'active', 'player', 'order'];
 
 /** Snapshot of live IT creatures; `nameOf` gives the display name ("Goblin 2"). */
 export function takeSnapshot(creatures: any[], nameOf: (creature: any) => string): ItSnapshot {
@@ -26,6 +28,7 @@ export function takeSnapshot(creatures: any[], nameOf: (creature: any) => string
             hidden: c.hidden ?? false,
             active: c.active ?? false,
             player: c.player === true,
+            order: typeof c.manualOrder === 'number' ? c.manualOrder : null,
         });
     }
     return snapshot;

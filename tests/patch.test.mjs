@@ -96,6 +96,24 @@ describe('applyPatch', () => {
         assert.equal(again.changed, false);
     });
 
+    it('keeps the turn with the same combatant when the order changes around them', () => {
+        // Turn 2 is the Orc. The Goblin drops below it, so the Orc moves up to position 1.
+        const fresh = [
+            monster('a', 'Goblin', 15, { sortIndex: 0 }),
+            monster('b', 'Orc', 12, { sortIndex: 2 }),
+            monster('c', 'Wolf', 15, { sortIndex: 1 }),
+        ];
+        const turnOnOrc = 2;
+        const patch = { changes: [
+            { match: { id: 'c', name: 'Wolf' }, fields: { tieOrder: { init: 15, rank: 0 } } },
+            { match: { id: 'a', name: 'Goblin' }, fields: { initiative: 11 } },
+        ], add: [] };
+        const { combatants, turn } = P.applyPatch(fresh, patch, turnOnOrc);
+        assert.equal(turn, 1);
+        assert.equal(combatants.find(c => c.id === 'b').sortIndex, turn, 'still the Orc');
+        assert.equal(P.applyPatch(fresh, { changes: [], add: [] }, turnOnOrc).turn, null, 'no change, no turn write');
+    });
+
     it('sets sortIndex like the webapp when something changed', () => {
         const fresh = [monster('a', 'Goblin', 5), monster('b', 'Orc', 8)];
         const { combatants } = P.applyPatch(fresh, { changes: [{ match: { id: 'a', name: 'Goblin' }, fields: { initiative: 20 } }], add: [] });
