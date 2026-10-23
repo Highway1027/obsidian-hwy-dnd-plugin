@@ -2,6 +2,14 @@
 
 Short log for troubleshooting. Newest first, 3 to 6 lines per session; details in commit messages. Earlier plugin history is in the webapp repo, git tag `ai-prompting-legacy` (`.AI_PROMPTING/SESSION_HISTORY.md`).
 
+## 23-10-2026 - DM tie order (built, not released)
+
+- A drag in IT keeps creatures where dropped, players too. New webapp field `tieOrder` {init, rank} instead of reusing `tieBreaker` (a random d20 everyone has; moving it up would break the modifier rule). Valid only while `init` matches, so initiative edits clear it by themselves.
+- Tim's choices: a dragged player keeps IT's initiative (typed edits still jump back); a newcomer to an ordered tie goes last; the webapp's own tie tool writes `tieOrder` too.
+- A drag is recognised by `manualOrder` changing (now in the IT snapshot). `applyPatch` keeps the turn on the same combatant when the order changes.
+- Gotchas: the webapp tie tool only shows for exact player-vs-player ties; its "Accept All" used to flip the order. Several plugin files are CRLF, others LF.
+- Also: DEX score for creatures from IT, ascending-sort warning, version headers dropped. 85 plugin tests, webapp 321 + e2e TO1 pass. Merged to develop in both repos; release order webapp first, then plugin 0.8.0.
+
 ## 22-10-2026 - Sitting J done, no hand tests open
 
 - J3-J4 (offline notice, HP sent again after wifi is back) passed: sitting J and 0.7.0 are fully hand-tested. No plugin hand tests open.
