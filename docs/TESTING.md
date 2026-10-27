@@ -1,38 +1,45 @@
-# Testing (Obsidian plugin)
+# Obsidian plugin testing
 
-**Blocking right now:** nothing. Sitting K is ready (0.8.0 released, webapp live 23-10-2026).
+Blocking right now: nothing. Sitting K is ready (0.8.0 released, webapp live 23-10-2026).
 
-Hand tests Tim still has to do, in sittings (one topic, one go). Last update: 23-10-2026.
+Automated checks: npm test (pure rules in tests/) and the bridge self-test in Obsidian
+(Ctrl+P > "Run bridge self-test (test campaign)", src/selftest/BridgeSelfTest.ts).
+Rules: last section.
 
-How to write a sitting (Tim, 15-10-2026: "concise, checklists with short bullet points, not novels"):
-- One action per line, then what you should see. One short sentence each.
-- Each sitting has a letter; steps are numbered per sitting (A1, A2 ...), so Tim can say "C3 failed". When needed add .1 (C5.1, C5.2).
-- Lines name the exact side (Obsidian or webapp), button or pane to use.
-- **A step you don't mention counts as passed.**
-- What the sitting needs (plugin version, IT version, a tracker with players and monsters) goes in "Before you start".
-- **Self-test first**: what the bridge does with IT and the webapp gets a step in the self-test (`src/selftest/BridgeSelfTest.ts`, step ids like the sittings). Hand sittings only hold what it can't check: an Obsidian restart, IT's own buttons and panes, the webapp's look, the DM's PC. Pure rules belong in `tests/` (`npm test`). Mark a step *assumed* when an earlier result covers it.
-- **Before you start** holds only what Tim checks or does, plus how to check he has the right build (Tim, 22-10-2026: keep agent reminders out of it):
-  - Release: "Community plugins shows Highway DnD Tools <version>. If not: BRAT → update, restart Obsidian."
-  - Unreleased build: "Community plugins shows <version>; restart Obsidian (or turn the plugin off and on) to load the build of DD-MM-YYYY HH:MM."
-  - Agent steps (`npm run vault`, deploys) are done before the sitting is handed over and never appear in it. If one could not be done, the sitting says what Tim must do instead.
-- When a release passes, remove its steps and add one dated line under Results.
+If something goes wrong: open Obsidian's console (Ctrl+Shift+I) and copy the lines
+starting with [Bridge].
 
-**If something goes wrong:** open Obsidian's console (Ctrl+Shift+I) and copy the lines starting with `[Bridge]`.
+---
 
 ## Sitting K: DM tie order (about 10 min)
 
 Before you start:
-- Community plugins shows Highway DnD Tools 0.8.0. If not: BRAT → update, restart Obsidian.
-- IT connected to a webapp tracker in a TEST campaign (not Ark van Noah) with 2 players and 3 monsters, initiatives rolled.
+- Community plugins shows Highway DnD Tools 0.8.0. If not: BRAT > update, restart Obsidian.
+- IT connected to a webapp tracker in a TEST campaign (not Ark van Noah), with 2 players
+  and 3 monsters, initiatives rolled.
 
-Steps:
-- [ ] K1 Obsidian: Ctrl+P → "Run bridge self-test (test campaign)". All steps pass (R5-R7 are new).
-- [ ] K2 IT: type a monster's initiative equal to a player's. Drag the monster above the player. Webapp: monster above the player, and it stays.
-- [ ] K3 IT: drag a player between two monsters with another initiative. Webapp: the player is there, with the initiative IT shows.
-- [ ] K4 Webapp: add a monster with the K2 initiative. Both sides: it goes below the tie you made.
-- [ ] K5 Start combat. IT: drag a creature from below the active one to above it. Both sides: the turn stays on the same creature.
-- [ ] K6 Webapp only: in a tie group, drag to reorder, click Accept. Reload the page: your order holds.
-- [ ] K7 Webapp: gear → sort debugger. The "DM Order" column shows 1, 2 ... for the ordered ties.
+- [ ] K1 Obsidian: Ctrl+P > "Run bridge self-test (test campaign)".
+      -> All steps pass (R5-R7 are new).
+
+- [ ] K2 Make a tie in IT:
+      K2.1 Type a monster's initiative equal to a player's.
+      K2.2 Drag the monster above the player.
+      -> Webapp: the monster is above the player, and it stays.
+
+- [ ] K3 IT: drag a player between two monsters with another initiative.
+      -> Webapp: the player is there, with the initiative IT shows.
+
+- [ ] K4 Webapp: add a monster with the K2 initiative.
+      -> Both sides: it goes below the tie you made.
+
+- [ ] K5 Start combat. IT: drag a creature from below the active one to above it.
+      -> Both sides: the turn stays on the same creature.
+
+- [ ] K6 Webapp only: in a tie group, drag to reorder, click Accept. Reload the page.
+      -> Your order holds.
+
+- [ ] K7 Webapp: gear > sort debugger.
+      -> The "DM Order" column shows 1, 2 ... for the ordered ties.
 
 ## Results so far
 
@@ -49,3 +56,35 @@ Steps:
 - 21-10-2026: sitting J on the 16:44 build: self-test 23 passed, A5 skipped (test character deleted). J2 failed: a drag in IT was only seen at the next turn. Fixed in 0.7.0 (bridge watches IT's store); J redone below.
 - 22-10-2026: J1 and J2 passed on 0.7.0. Edge case: very fast drags one after another can still break sync. Feedback: a DM drag inside a tie the webapp already resolved should be kept and remembered, also when a new combatant with that initiative joins.
 - 22-10-2026: J3 and J4 passed (offline notice, HP sent again after wifi back). Sitting J and 0.7.0 done.
+
+## How this file works
+
+Same rules in every project (source: testing-format.md in Tim's ai-setup repo).
+
+- Automated first: unit tests and the self-test check what a script can. This file
+  holds only what they cannot: the look, real clicks and keys, a second player or
+  device, real AI text, live data.
+- "Blocking right now" names only a test whose result changes the next step.
+- A sitting is one topic Tim can test in one go, with an estimated time.
+- Each sitting takes the next letter (after Z start at A again). Steps use that letter:
+  D1, D2, sub-steps D2.1. A big sitting can have parts; each part takes the next letter.
+- "Before you start" holds only what Tim must do or check, and how he sees he has the
+  right build (which version, shown where). The agent builds, installs and deploys
+  beforehand; if it could not, the sitting says what Tim must do instead.
+- When a self-test or scenario covers part of a sitting, the first step runs it and
+  says which result to expect.
+- One action per line, then what you should see on its own line, starting with "-> ".
+- Name the exact button, menu, page or test tool.
+- Plain text in steps: no bold, italics or backticks. A blank line between steps.
+  Sub-steps on their own lines, indented under the step. Lines under about 90 characters.
+- A step earlier results make quite safe says "(assumed, based on <result>)": a glance.
+- Tim reports by id ("D3 failed"). A step he does not mention counts as passed.
+- Passed steps are removed, with one dated line under "Results so far" (newest first).
+  When that list gets long, older lines move to TESTING_HISTORY.md.
+
+This project:
+- Lines name the exact side (Obsidian, IT or webapp), button or pane to use.
+- Right build in "Before you start". Release: "Community plugins shows Highway DnD Tools
+  <version>. If not: BRAT > update, restart Obsidian." Unreleased build: "Community plugins
+  shows <version>; restart Obsidian to load the build of DD-MM-YYYY HH:MM."
+- npm run vault and deploys are agent steps and never appear in a sitting.
